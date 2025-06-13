@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress Local Development Environment</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fab fa-wordpress"></i> WordPress Local Development Environment</h1>
+            <p>Create and manage local WordPress development environments with Docker</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Create New Project Section -->
+            <section class="create-project">
+                <h2><i class="fas fa-plus-circle"></i> Create New Project</h2>
+                <form id="createProjectForm" class="project-form" enctype="multipart/form-data">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="project_name">
+                                <i class="fas fa-folder"></i> Project Name *
+                            </label>
+                            <input type="text" id="project_name" name="project_name" required 
+                                   placeholder="my-wordpress-site" pattern="[a-zA-Z0-9\-_]+">
+                            <small>Only letters, numbers, hyphens, and underscores allowed</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="wordpress_version">
+                                <i class="fab fa-wordpress"></i> WordPress Version *
+                            </label>
+                            <select id="wordpress_version" name="wordpress_version" required>
+                                <option value="">Select WordPress version...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="repo_url">
+                                <i class="fab fa-git-alt"></i> Repository URL (optional)
+                            </label>
+                            <input type="text" id="repo_url" name="repo_url" 
+                                   placeholder="git@github.com:username/repo.git or https://github.com/username/repo.git">
+                            <small>
+                                <strong>For private repos:</strong> Use SSH URL (git@github.com:user/repo.git) or Personal Access Token<br>
+                                <strong>For public repos:</strong> Use HTTPS URL (https://github.com/user/repo.git)<br>
+                                Repository should contain wp-content folder or theme/plugin files
+                            </small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="db_file">
+                                <i class="fas fa-database"></i> Database File (optional)
+                            </label>
+                            <input type="file" id="db_file" name="db_file" accept=".sql,.mysql,.db">
+                            <small>Upload .sql file to import into the database</small>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="custom_domain">
+                                <i class="fas fa-globe"></i> Custom Domain (optional)
+                            </label>
+                            <input type="text" id="custom_domain" name="custom_domain" 
+                                   placeholder="my-site.local">
+                            <small>Leave empty for auto-generated: local.PROJECT_NAME.test</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="subfolder">
+                                <i class="fas fa-folder-open"></i> Subfolder (optional)
+                            </label>
+                            <input type="text" id="subfolder" name="subfolder" 
+                                   placeholder="wp-subfolder">
+                            <small>For sites living in subfolders like domain.com/folder</small>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group checkbox-group">
+                            <label class="checkbox">
+                                <input type="checkbox" id="enable_ssl" name="enable_ssl" checked>
+                                <span class="checkmark"></span>
+                                <i class="fas fa-lock"></i> Enable SSL (HTTPS)
+                            </label>
+                        </div>
+
+                        <div class="form-group checkbox-group">
+                            <label class="checkbox">
+                                <input type="checkbox" id="enable_redis" name="enable_redis" checked>
+                                <span class="checkmark"></span>
+                                <i class="fas fa-memory"></i> Enable Redis Caching
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-rocket"></i> Create Project
+                    </button>
+                </form>
+            </section>
+
+            <!-- Existing Projects Section -->
+            <section class="projects-list">
+                <h2><i class="fas fa-list"></i> Existing Projects</h2>
+                <div id="projectsList" class="projects-grid">
+                    <!-- Projects will be loaded here -->
+                </div>
+            </section>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay hidden">
+            <div class="loading-spinner">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Creating project...</p>
+            </div>
+        </div>
+
+        <!-- Success/Error Messages -->
+        <div id="messageContainer" class="message-container hidden">
+            <div class="message">
+                <span class="message-text"></span>
+                <button class="message-close">&times;</button>
+            </div>
+        </div>
+
+        <!-- Project Actions Modal -->
+        <div id="projectModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Project Actions</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="project-info">
+                        <h4 id="modalProjectName">Project Name</h4>
+                        <p><strong>Domain:</strong> <span id="modalDomain"></span></p>
+                        <p><strong>Status:</strong> <span id="modalStatus" class="status-badge"></span></p>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="startBtn" class="btn btn-success">
+                            <i class="fas fa-play"></i> Start
+                        </button>
+                        <button id="stopBtn" class="btn btn-warning">
+                            <i class="fas fa-stop"></i> Stop
+                        </button>
+                        <button id="logsBtn" class="btn btn-info">
+                            <i class="fas fa-file-alt"></i> Logs
+                        </button>
+                        <button id="uploadDbBtn" class="btn btn-secondary">
+                            <i class="fas fa-upload"></i> Upload DB
+                        </button>
+                        <button id="deleteBtn" class="btn btn-danger">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Modal -->
+        <div id="logsModal" class="modal hidden">
+            <div class="modal-content logs-modal">
+                <div class="modal-header">
+                    <h3>Project Logs</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <pre id="logsContent" class="logs-content"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Upload Modal -->
+        <div id="dbUploadModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Upload Database File</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="dbUploadForm" enctype="multipart/form-data">
+                        <div class="form-group">
+                            <label for="dbUploadFile">
+                                <i class="fas fa-database"></i> Select Database File
+                            </label>
+                            <input type="file" id="dbUploadFile" name="db_file" accept=".sql,.mysql,.db" required>
+                            <small>Upload .sql file to replace the current database</small>
+                        </div>
+                        <div class="upload-options">
+                            <label class="checkbox">
+                                <input type="checkbox" id="backupBeforeUpload" name="backup_before_upload" checked>
+                                <span class="checkmark"></span>
+                                <i class="fas fa-save"></i> Backup current database before import
+                            </label>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-upload"></i> Upload & Import
+                            </button>
+                            <button type="button" class="btn btn-secondary modal-close">
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 WordPress Local Development Environment</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html> 
