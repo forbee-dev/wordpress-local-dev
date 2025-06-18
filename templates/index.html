@@ -154,6 +154,9 @@
                         <button id="logsBtn" class="btn btn-info">
                             <i class="fas fa-file-alt"></i> Logs
                         </button>
+                        <button id="debugLogsBtn" class="btn btn-primary">
+                            <i class="fas fa-bug"></i> Debug Logs
+                        </button>
                         <button id="uploadDbBtn" class="btn btn-secondary">
                             <i class="fas fa-upload"></i> Upload DB
                         </button>
@@ -174,6 +177,44 @@
                 </div>
                 <div class="modal-body">
                     <pre id="logsContent" class="logs-content"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Debug Logs Modal -->
+        <div id="debugLogsModal" class="modal hidden">
+            <div class="modal-content logs-modal">
+                <div class="modal-header">
+                    <h3>WordPress Debug Logs</h3>
+                    <div class="logs-header-actions">
+                        <button id="toggleLiveLogsBtn" class="btn btn-sm btn-success">
+                            <i class="fas fa-pause"></i> Pause Live
+                        </button>
+                        <button id="refreshDebugLogsBtn" class="btn btn-sm btn-secondary">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                        <button id="clearDebugLogsBtn" class="btn btn-sm btn-warning">
+                            <i class="fas fa-trash"></i> Clear Logs
+                        </button>
+                    </div>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="debug-logs-controls">
+                        <div class="debug-controls-left">
+                            <label for="debugLogsLines">Lines to show:</label>
+                            <select id="debugLogsLines">
+                                <option value="20">20</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                            </select>
+                        </div>
+                        <div class="debug-controls-right">
+                            <span id="lastRefresh" class="last-refresh">Live streaming active</span>
+                        </div>
+                    </div>
+                    <pre id="debugLogsContent" class="logs-content debug-logs"></pre>
                 </div>
             </div>
         </div>

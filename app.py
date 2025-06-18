@@ -293,6 +293,25 @@ def project_logs(project_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/projects/<project_name>/debug-logs')
+def project_debug_logs(project_name):
+    """Get WordPress debug logs"""
+    try:
+        lines = request.args.get('lines', 50, type=int)
+        result = project_manager.get_wordpress_debug_logs(project_name, lines)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/debug-logs/clear', methods=['POST'])
+def clear_debug_logs(project_name):
+    """Clear WordPress debug logs"""
+    try:
+        result = project_manager.clear_wordpress_debug_logs(project_name)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/projects/<project_name>/upload-db', methods=['POST'])
 def upload_database(project_name):
     """Upload and import database file for existing project"""

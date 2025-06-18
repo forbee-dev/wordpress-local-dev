@@ -304,6 +304,66 @@ class ProjectManager:
         except Exception as e:
             return f"Error getting logs: {str(e)}"
     
+    def get_wordpress_debug_logs(self, project_name, lines=50):
+        """Get WordPress debug logs for a project"""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+        
+        try:
+            # Check if containers are running
+            status = self.get_project_status(project_name)
+            if status.get('status') != 'running':
+                return {'success': False, 'error': 'Project must be running to view debug logs'}
+            
+            # Get debug logs from WordPress container
+            result = subprocess.run(
+                ['docker-compose', 'exec', '-T', 'wordpress', 'tail', f'-{lines}', '/var/www/html/wp-content/debug.log'],
+                cwd=project_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                return {'success': True, 'logs': result.stdout}
+            else:
+                # If debug.log doesn't exist yet, return empty logs
+                if "No such file or directory" in result.stderr:
+                    return {'success': True, 'logs': 'No debug logs found yet. Debug logging is enabled but no errors have been logged.'}
+                else:
+                    return {'success': False, 'error': f'Error reading debug logs: {result.stderr}'}
+                
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def clear_wordpress_debug_logs(self, project_name):
+        """Clear WordPress debug logs for a project"""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+        
+        try:
+            # Check if containers are running
+            status = self.get_project_status(project_name)
+            if status.get('status') != 'running':
+                return {'success': False, 'error': 'Project must be running to clear debug logs'}
+            
+            # Clear debug logs in WordPress container
+            result = subprocess.run(
+                ['docker-compose', 'exec', '-T', 'wordpress', 'sh', '-c', 'echo "" > /var/www/html/wp-content/debug.log'],
+                cwd=project_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                return {'success': True, 'message': 'Debug logs cleared successfully'}
+            else:
+                return {'success': False, 'error': f'Error clearing debug logs: {result.stderr}'}
+                
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
     def import_database(self, project_name, db_file_path, backup_before_import=True):
         """Import database file into existing project"""
         project_path = self.projects_dir / project_name
@@ -641,6 +701,9 @@ services:
       WORDPRESS_DB_USER: ${{DB_USER}}
       WORDPRESS_DB_PASSWORD: ${{DB_PASSWORD}}
       WORDPRESS_DB_NAME: ${{DB_NAME}}
+      WORDPRESS_DEBUG: 1
+      WORDPRESS_DEBUG_LOG: 1
+      WORDPRESS_DEBUG_DISPLAY: 0
     volumes:
       - ./wp-content:/var/www/html/wp-content
       - wordpress_data:/var/www/html
@@ -770,6 +833,14 @@ build: ## Build/rebuild the WordPress environment
 
 logs: ## Show logs
 \t@docker-compose logs -f
+
+debug-logs: ## Show WordPress debug logs (live)
+\t@echo "Showing WordPress debug logs..."
+\t@docker-compose exec wordpress tail -f /var/www/html/wp-content/debug.log
+
+debug-recent: ## Show recent WordPress debug entries
+\t@echo "Recent WordPress debug entries:"
+\t@docker-compose exec wordpress tail -50 /var/www/html/wp-content/debug.log
 
 shell: ## Access WordPress container shell
 \t@docker-compose exec wordpress bash

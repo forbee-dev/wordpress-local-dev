@@ -43,6 +43,10 @@ class WordPressDevApp {
             this.showLogs(this.currentProject);
         });
 
+        document.getElementById('debugLogsBtn')?.addEventListener('click', () => {
+            this.showDebugLogs(this.currentProject);
+        });
+
         document.getElementById('deleteBtn')?.addEventListener('click', () => {
             this.deleteProject(this.currentProject);
         });
@@ -333,6 +337,183 @@ class WordPressDevApp {
         }
     }
 
+    async showDebugLogs(projectName) {
+        if (!projectName) return;
+
+        this.currentProject = projectName;
+        this.showModal('debugLogsModal');
+        this.loadDebugLogs();
+
+        // Start live streaming
+        this.startLiveLogging();
+
+        // Add event listeners for debug logs controls
+        document.getElementById('refreshDebugLogsBtn')?.addEventListener('click', () => {
+            this.loadDebugLogs();
+        });
+
+        document.getElementById('clearDebugLogsBtn')?.addEventListener('click', () => {
+            this.clearDebugLogs();
+        });
+
+        document.getElementById('debugLogsLines')?.addEventListener('change', () => {
+            this.loadDebugLogs();
+        });
+
+        // Add live streaming toggle
+        document.getElementById('toggleLiveLogsBtn')?.addEventListener('click', () => {
+            this.toggleLiveLogging();
+        });
+    }
+
+    async loadDebugLogs(showLoadingOverlay = true) {
+        if (!this.currentProject) return;
+
+        if (showLoadingOverlay) {
+            this.showLoading();
+        }
+        
+        try {
+            const lines = document.getElementById('debugLogsLines')?.value || 50;
+            const response = await fetch(`/api/projects/${this.currentProject}/debug-logs?lines=${lines}`);
+            const result = await response.json();
+            
+            if (response.ok) {
+                const content = result.logs || 'No debug logs available';
+                const debugLogsContent = document.getElementById('debugLogsContent');
+                
+                // Store current scroll position to maintain it during live updates
+                const wasAtBottom = debugLogsContent.scrollTop >= (debugLogsContent.scrollHeight - debugLogsContent.clientHeight - 50);
+                
+                debugLogsContent.textContent = content;
+                
+                // Auto-scroll to bottom only if user was already at bottom or this is manual refresh
+                if (wasAtBottom || showLoadingOverlay) {
+                    debugLogsContent.scrollTop = debugLogsContent.scrollHeight;
+                }
+                
+                // Color-code log levels
+                this.colorCodeDebugLogs(debugLogsContent);
+                
+                // Update last refresh time
+                if (!showLoadingOverlay) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    const refreshStatus = document.getElementById('lastRefresh');
+                    if (refreshStatus) {
+                        refreshStatus.textContent = `Last updated: ${timestamp}`;
+                    }
+                }
+            } else {
+                if (showLoadingOverlay) {
+                    this.showMessage(result.error || 'Failed to load debug logs', 'error');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading debug logs:', error);
+            if (showLoadingOverlay) {
+                this.showMessage('Failed to load debug logs', 'error');
+            }
+        } finally {
+            if (showLoadingOverlay) {
+                this.hideLoading();
+            }
+        }
+    }
+
+    async clearDebugLogs() {
+        if (!this.currentProject) return;
+
+        if (!confirm('Are you sure you want to clear all debug logs? This action cannot be undone.')) {
+            return;
+        }
+
+        this.showLoading();
+        
+        try {
+            const response = await fetch(`/api/projects/${this.currentProject}/debug-logs/clear`, {
+                method: 'POST'
+            });
+            const result = await response.json();
+            
+            if (response.ok) {
+                this.showMessage('Debug logs cleared successfully!', 'success');
+                this.loadDebugLogs(); // Refresh the logs view
+            } else {
+                this.showMessage(result.error || 'Failed to clear debug logs', 'error');
+            }
+        } catch (error) {
+            console.error('Error clearing debug logs:', error);
+            this.showMessage('Failed to clear debug logs', 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    colorCodeDebugLogs(element) {
+        const content = element.textContent;
+        const lines = content.split('\n');
+        
+        const coloredLines = lines.map(line => {
+            if (line.includes('[ERROR]') || line.includes('Fatal error') || line.includes('PHP Fatal error')) {
+                return `<span style="color: #e74c3c; font-weight: bold;">${line}</span>`;
+            } else if (line.includes('[WARNING]') || line.includes('PHP Warning') || line.includes('Warning:')) {
+                return `<span style="color: #f39c12; font-weight: bold;">${line}</span>`;
+            } else if (line.includes('[NOTICE]') || line.includes('PHP Notice') || line.includes('Notice:')) {
+                return `<span style="color: #fff;">${line}</span>`;
+            } else if (line.includes('[DEBUG]') || line.includes('DEBUG')) {
+                return `<span style="color: #95a5a6;">${line}</span>`;
+            } else {
+                return line;
+            }
+        });
+        
+        element.innerHTML = coloredLines.join('\n');
+    }
+
+    startLiveLogging() {
+        this.isLiveLogging = true;
+        
+        // Update button state
+        const toggleBtn = document.getElementById('toggleLiveLogsBtn');
+        if (toggleBtn) {
+            toggleBtn.innerHTML = '<i class="fas fa-pause"></i> Pause Live';
+            toggleBtn.classList.remove('btn-success');
+            toggleBtn.classList.add('btn-warning');
+        }
+
+        // Start polling every 3 seconds
+        this.liveLogInterval = setInterval(() => {
+            if (this.isLiveLogging && this.currentProject) {
+                this.loadDebugLogs(false); // Don't show loading overlay for auto-refresh
+            }
+        }, 3000);
+    }
+
+    stopLiveLogging() {
+        this.isLiveLogging = false;
+        
+        // Update button state
+        const toggleBtn = document.getElementById('toggleLiveLogsBtn');
+        if (toggleBtn) {
+            toggleBtn.innerHTML = '<i class="fas fa-play"></i> Start Live';
+            toggleBtn.classList.remove('btn-warning');
+            toggleBtn.classList.add('btn-success');
+        }
+
+        if (this.liveLogInterval) {
+            clearInterval(this.liveLogInterval);
+            this.liveLogInterval = null;
+        }
+    }
+
+    toggleLiveLogging() {
+        if (this.isLiveLogging) {
+            this.stopLiveLogging();
+        } else {
+            this.startLiveLogging();
+        }
+    }
+
     showModal(modalId) {
         const modal = document.getElementById(modalId);
         modal.classList.remove('hidden');
@@ -342,6 +523,11 @@ class WordPressDevApp {
     closeModal(modal) {
         modal.classList.add('hidden');
         document.body.style.overflow = 'auto';
+        
+        // Stop live logging when debug logs modal is closed
+        if (modal.id === 'debugLogsModal') {
+            this.stopLiveLogging();
+        }
     }
 
     showLoading() {
