@@ -355,6 +355,57 @@ def upload_database(project_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/import-database/<project_name>', methods=['POST'])
+def import_database(project_name):
+    """Import database for a project"""
+    try:
+        if 'db_file' not in request.files:
+            return jsonify({'error': 'No database file provided'}), 400
+        
+        file = request.files['db_file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Create uploads directory if it doesn't exist
+        uploads_dir = Path('uploads')
+        uploads_dir.mkdir(exist_ok=True)
+        
+        # Save the uploaded file
+        filename = secure_filename(file.filename)
+        db_file_path = uploads_dir / filename
+        file.save(str(db_file_path))
+        
+        # Import the database
+        result = project_manager.import_database(project_name, str(db_file_path))
+        
+        # Clean up uploaded file
+        try:
+            db_file_path.unlink()
+        except:
+            pass
+        
+        if result['success']:
+            return jsonify({'message': result['message']})
+        else:
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/fix-upload-limits/<project_name>', methods=['POST'])
+def fix_upload_limits(project_name):
+    """Fix PHP upload limits for a project"""
+    try:
+        result = project_manager.fix_php_upload_limits(project_name)
+        
+        if result['success']:
+            return jsonify({'message': result['message']})
+        else:
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs('wordpress-projects', exist_ok=True)

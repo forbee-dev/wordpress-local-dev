@@ -124,12 +124,17 @@ class ProjectManager:
                 if start_result.returncode == 0:
                     print(f"   ✅ Docker containers started successfully")
                     
+                    # Give containers a moment to fully start
+                    import time
+                    time.sleep(5)
+                    
+                    # Fix wp-config.php to properly read debug environment variables
+                    print(f"   🔧 Configuring WordPress debug settings...")
+                    self._fix_wp_config_debug(project_name)
+                    
                     # If database file was provided, import it after containers are running
                     if db_file_path and Path(project_path / "data" / Path(db_file_path).name).exists():
                         print(f"   📋 Importing database...")
-                        # Give containers a moment to fully start
-                        import time
-                        time.sleep(5)
                         
                         # Import database using the project-relative path
                         db_import_result = self.import_database(
@@ -654,6 +659,9 @@ class ProjectManager:
     def _create_docker_compose(self, project_path, project_name, wordpress_version, domain, enable_ssl, enable_redis):
         """Create docker-compose.yml for the project"""
         
+        # Create custom PHP configuration for file uploads
+        self._create_php_config(project_path)
+        
         # Build nginx volumes list
         nginx_volumes = [
             "./nginx.conf:/etc/nginx/conf.d/default.conf",
@@ -704,8 +712,11 @@ services:
       WORDPRESS_DEBUG: 1
       WORDPRESS_DEBUG_LOG: 1
       WORDPRESS_DEBUG_DISPLAY: 0
+      WP_DEBUG_DISPLAY: 0
+      WP_DEBUG_LOG: 1
     volumes:
       - ./wp-content:/var/www/html/wp-content
+      - ./php-uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
       - wordpress_data:/var/www/html
     networks:
       - wordpress_network
@@ -737,6 +748,9 @@ services:
       PMA_HOST: mysql
       PMA_USER: ${{DB_USER}}
       PMA_PASSWORD: ${{DB_PASSWORD}}
+      UPLOAD_LIMIT: 100M
+    volumes:
+      - ./php-uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
     ports:
       - "${{PHPMYADMIN_PORT}}:80"
     networks:
@@ -785,6 +799,36 @@ DOMAIN={domain.split('/')[0]}
         
         with open(project_path / ".env", 'w') as f:
             f.write(env_content)
+    
+    def _create_php_config(self, project_path):
+        """Create custom PHP configuration for file uploads"""
+        php_config = """; PHP Upload Configuration
+; Increase file upload limits for WordPress development
+
+; Maximum file size for uploads
+upload_max_filesize = 100M
+
+; Maximum size of POST data
+post_max_size = 100M
+
+; Maximum number of files that can be uploaded
+max_file_uploads = 20
+
+; Maximum execution time for scripts (in seconds)
+max_execution_time = 300
+
+; Maximum amount of memory a script may consume
+memory_limit = 256M
+
+; Maximum input variables
+max_input_vars = 3000
+
+; Maximum time to parse input data
+max_input_time = 300
+"""
+        
+        with open(project_path / "php-uploads.ini", 'w') as f:
+            f.write(php_config)
     
     def _create_makefile(self, project_path, project_name, domain, db_file_path):
         """Create Makefile for the project"""
@@ -1001,4 +1045,113 @@ status: ## Show container status
 """
         
         with open(project_path / "nginx.conf", 'w') as f:
-            f.write(nginx_content) 
+            f.write(nginx_content)
+    
+    def _fix_wp_config_debug(self, project_name):
+        """Fix wp-config.php to properly read debug environment variables"""
+        try:
+            # Create the PHP script to fix wp-config.php
+            fix_script = '''<?php
+$content = file_get_contents('/var/www/html/wp-config.php');
+
+$old = "define( 'WP_DEBUG', !!getenv_docker('WORDPRESS_DEBUG', '') );";
+$new = "define( 'WP_DEBUG', !!getenv_docker('WORDPRESS_DEBUG', '') );
+define( 'WP_DEBUG_LOG', !!getenv_docker('WORDPRESS_DEBUG_LOG', '') );
+define( 'WP_DEBUG_DISPLAY', !!getenv_docker('WORDPRESS_DEBUG_DISPLAY', '') );";
+
+$content = str_replace($old, $new, $content);
+file_put_contents('/var/www/html/wp-config.php', $content);
+echo "wp-config.php updated successfully\\n";
+?>'''
+
+            # Run the fix script in the WordPress container
+            result = subprocess.run(
+                ['docker-compose', 'exec', '-T', 'wordpress', 'php', '-r', fix_script],
+                cwd=self.projects_dir / project_name,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                print(f"   ✅ WordPress debug configuration updated")
+            else:
+                print(f"   ⚠️  Warning: Could not update wp-config.php debug settings: {result.stderr}")
+                
+        except Exception as e:
+            print(f"   ⚠️  Warning: Error updating wp-config.php: {str(e)}")
+
+    def fix_php_upload_limits(self, project_name):
+        """Fix PHP upload limits for an existing project"""
+        try:
+            project_path = self.projects_dir / project_name
+            if not project_path.exists():
+                return {'success': False, 'error': 'Project not found'}
+
+            print(f"🔧 Fixing PHP upload limits for project: {project_name}")
+            
+            # Create or update PHP configuration
+            self._create_php_config(project_path)
+            print(f"   ✅ Created PHP upload configuration")
+            
+            # Check if docker-compose.yml needs updating
+            docker_compose_path = project_path / "docker-compose.yml"
+            if docker_compose_path.exists():
+                with open(docker_compose_path, 'r') as f:
+                    compose_content = f.read()
+                
+                # Check if PHP config is already mounted
+                if './php-uploads.ini:/usr/local/etc/php/conf.d/uploads.ini' not in compose_content:
+                    # Need to update docker-compose.yml
+                    print(f"   🔄 Updating docker-compose.yml...")
+                    
+                    # Get project config to rebuild docker-compose with current settings
+                    config_path = project_path / "config.json"
+                    if config_path.exists():
+                        with open(config_path, 'r') as f:
+                            config = json.load(f)
+                        
+                        # Rebuild docker-compose.yml with new PHP config
+                        self._create_docker_compose(
+                            project_path, 
+                            config['name'], 
+                            config.get('wordpress_version', 'latest'),
+                            config['domain'], 
+                            config.get('enable_ssl', True), 
+                            config.get('enable_redis', True)
+                        )
+                        print(f"   ✅ Updated docker-compose.yml with PHP configuration")
+                        
+                        # Restart containers to apply changes
+                        print(f"   🔄 Restarting containers to apply changes...")
+                        restart_result = subprocess.run(
+                            ['docker-compose', 'down'],
+                            cwd=project_path,
+                            capture_output=True,
+                            text=True
+                        )
+                        
+                        restart_result = subprocess.run(
+                            ['docker-compose', 'up', '-d'],
+                            cwd=project_path,
+                            capture_output=True,
+                            text=True
+                        )
+                        
+                        if restart_result.returncode == 0:
+                            print(f"   ✅ Containers restarted successfully")
+                            print(f"   📏 New upload limits: 100MB")
+                            return {'success': True, 'message': 'PHP upload limits updated successfully. You can now upload files up to 100MB.'}
+                        else:
+                            print(f"   ⚠️  Warning: Container restart failed: {restart_result.stderr}")
+                            return {'success': False, 'error': f'Container restart failed: {restart_result.stderr}'}
+                    else:
+                        return {'success': False, 'error': 'Project config.json not found'}
+                else:
+                    print(f"   ✅ PHP upload configuration already present")
+                    return {'success': True, 'message': 'PHP upload limits are already configured'}
+            else:
+                return {'success': False, 'error': 'docker-compose.yml not found'}
+                
+        except Exception as e:
+            print(f"   ❌ Error fixing PHP upload limits: {str(e)}")
+            return {'success': False, 'error': str(e)} 
