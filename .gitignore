@@ -116,3 +116,9 @@ temp/
 
 # Host file backups
 /etc/hosts.wordpress_backup 
+
+# Cursor
+.cursor/
+
+# Claude
+claude.md

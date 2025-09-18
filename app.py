@@ -406,6 +406,66 @@ def fix_upload_limits(project_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/add-wpcli/<project_name>', methods=['POST'])
+def add_wpcli_to_project(project_name):
+    """Add WP CLI service to a project"""
+    try:
+        result = project_manager.add_wpcli_to_project(project_name)
+        
+        if result['success']:
+            return jsonify({'message': result['message']})
+        else:
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/add-wpcli-all', methods=['POST'])
+def add_wpcli_to_all_projects():
+    """Add WP CLI service to all projects"""
+    try:
+        result = project_manager.add_wpcli_to_all_projects()
+        
+        if result['success']:
+            return jsonify({
+                'message': f'WP CLI added to {result["successful"]}/{result["total"]} projects',
+                'results': result['results']
+            })
+        else:
+            return jsonify({
+                'error': f'Failed to add WP CLI to {result["failed"]} projects',
+                'results': result['results']
+            }), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/wp-cli/<project_name>', methods=['POST'])
+def run_wp_cli_command(project_name):
+    """Run a WP CLI command on a project"""
+    try:
+        data = request.get_json()
+        if not data or 'command' not in data:
+            return jsonify({'error': 'No command provided'}), 400
+        
+        command = data['command']
+        result = project_manager.run_wp_cli_command(project_name, command)
+        
+        if result['success']:
+            return jsonify({
+                'message': 'Command executed successfully',
+                'output': result['output'],
+                'command': result['command']
+            })
+        else:
+            return jsonify({
+                'error': result['error'],
+                'command': result['command']
+            }), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs('wordpress-projects', exist_ok=True)

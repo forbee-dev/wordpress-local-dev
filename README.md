@@ -12,6 +12,7 @@ A comprehensive web-based tool to quickly spin up and manage local WordPress dev
 
 ### 🐳 **Complete Docker Stack**
 - **WordPress**: Real-time versions from Docker Hub registry
+- **WP CLI**: Command-line WordPress management tools integrated into containers
 - **MySQL 8.0**: Reliable database with backup/restore capabilities
 - **phpMyAdmin**: Web-based database management interface
 - **Redis**: Optional caching layer for improved performance  
@@ -40,6 +41,7 @@ A comprehensive web-based tool to quickly spin up and manage local WordPress dev
 
 ### ⚙️ **Automation & CLI Tools**
 - **Makefile Commands**: Standardized project management commands
+- **WP CLI Integration**: Full WordPress command-line interface access
 - **Container Management**: Start, stop, restart, rebuild with one command
 - **Log Viewing**: Real-time container logs via web interface
 - **Shell Access**: Direct container access for debugging
@@ -110,6 +112,7 @@ A comprehensive web-based tool to quickly spin up and manage local WordPress dev
   - Compressed exports for large databases
 
 #### **Advanced Operations**
+- **WP CLI Commands**: Full WordPress CLI access for plugins, themes, users, and database operations
 - **Git Repository Updates**: Re-clone wp-content repositories
 - **SSL Certificate Renewal**: Regenerate certificates as needed
 - **Container Management**: Individual service control (WordPress, MySQL, Redis, etc.)
@@ -157,5 +160,129 @@ Your repository remains **completely intact** with all development files preserv
 - `make shell` - Access WordPress container shell
 - `make db-import` - Import database
 - `make db-export` - Export database
+- `make wp-cli` - Access WP CLI interface
 - `make clean` - Clean up containers/volumes
-- `make status` - Show container status 
+- `make status` - Show container status
+
+## 🔧 WP CLI Integration
+
+### **WordPress Command Line Interface**
+
+Every project now includes full WP CLI support for advanced WordPress management:
+
+#### **Quick Start with WP CLI**
+```bash
+# Navigate to your project directory
+cd wordpress-projects/your-project-name
+
+# Check WordPress info
+docker-compose --profile cli run --rm wpcli --info
+
+# List all plugins
+docker-compose --profile cli run --rm wpcli plugin list
+
+# Install and activate a plugin
+docker-compose --profile cli run --rm wpcli plugin install contact-form-7 --activate
+
+# Update WordPress core
+docker-compose --profile cli run --rm wpcli core update
+```
+
+#### **Common WP CLI Commands**
+
+**Plugin Management:**
+```bash
+# List all plugins
+docker-compose --profile cli run --rm wpcli plugin list
+
+# Install plugins
+docker-compose --profile cli run --rm wpcli plugin install akismet --activate
+docker-compose --profile cli run --rm wpcli plugin install woocommerce
+
+# Update plugins
+docker-compose --profile cli run --rm wpcli plugin update --all
+
+# Deactivate/delete plugins
+docker-compose --profile cli run --rm wpcli plugin deactivate akismet
+docker-compose --profile cli run --rm wpcli plugin delete akismet
+```
+
+**Theme Management:**
+```bash
+# List themes
+docker-compose --profile cli run --rm wpcli theme list
+
+# Install themes
+docker-compose --profile cli run --rm wpcli theme install twentytwentyfour --activate
+
+# Update themes
+docker-compose --profile cli run --rm wpcli theme update --all
+```
+
+**User Management:**
+```bash
+# List users
+docker-compose --profile cli run --rm wpcli user list
+
+# Create new user
+docker-compose --profile cli run --rm wpcli user create john john@example.com --role=editor
+
+# Change user password
+docker-compose --profile cli run --rm wpcli user update admin --user_pass=newpassword
+```
+
+**Database Operations:**
+```bash
+# Export database
+docker-compose --profile cli run --rm wpcli db export backup.sql
+
+# Search and replace URLs
+docker-compose --profile cli run --rm wpcli search-replace 'oldurl.com' 'newurl.com'
+
+# Optimize database
+docker-compose --profile cli run --rm wpcli db optimize
+```
+
+**Content Management:**
+```bash
+# Create posts
+docker-compose --profile cli run --rm wpcli post create --post_title="Hello World" --post_content="This is a test post" --post_status=publish
+
+# List posts
+docker-compose --profile cli run --rm wpcli post list
+
+# Delete posts
+docker-compose --profile cli run --rm wpcli post delete 123 --force
+```
+
+**Cache Management:**
+```bash
+# Flush object cache
+docker-compose --profile cli run --rm wpcli cache flush
+
+# Clear transients
+docker-compose --profile cli run --rm wpcli transient delete --all
+```
+
+#### **API Integration**
+
+You can also run WP CLI commands via the web API:
+
+```bash
+# Add WP CLI to a project
+curl -X POST http://localhost:5001/api/add-wpcli/your-project-name
+
+# Run WP CLI commands via API
+curl -X POST http://localhost:5001/api/wp-cli/your-project-name \
+  -H "Content-Type: application/json" \
+  -d '{"command": "plugin list"}'
+```
+
+#### **Technical Details**
+
+- **Image**: Uses official `wordpress:cli-php8.3` Docker image
+- **Network**: Connected to the same network as WordPress and MySQL
+- **Volumes**: Shares WordPress data and wp-content volumes
+- **Profiles**: Uses Docker Compose profiles (CLI service only runs when explicitly called)
+- **Permissions**: Runs as www-data user (33:33) for proper file permissions
+- **Working Directory**: Pre-configured to WordPress root (`/var/www/html`) 

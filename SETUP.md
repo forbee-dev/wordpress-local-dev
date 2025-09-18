@@ -4,6 +4,8 @@
 
 Before using this tool, ensure you have the following installed:
 
+**New in this version:** All projects now include integrated WP CLI support for advanced WordPress management via command line!
+
 ### Required Software
 
 1. **Docker & Docker Compose**
