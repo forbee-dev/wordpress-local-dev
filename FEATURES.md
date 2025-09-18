@@ -10,6 +10,7 @@
 
 ### 🐳 Docker-Powered Infrastructure
 - **WordPress**: Real-time versions from Docker Hub registry with PHP version detection
+- **WP CLI**: Integrated WordPress command-line interface for advanced management
 - **MySQL 8.0**: Reliable database with backup/restore and live replacement capabilities
 - **phpMyAdmin**: Web-based database management interface with secure access
 - **Redis**: Optional caching layer for improved performance
@@ -49,6 +50,7 @@
 ### ⚙️ Makefile Automation
 - **Standardized Commands**: Consistent interface across all projects
 - **Database Operations**: Import/export database with single commands
+- **WP CLI Integration**: WordPress command-line interface access via Docker profiles
 - **Container Management**: Start, stop, restart, rebuild containers
 - **Development Tools**: Shell access, log viewing, cleanup utilities
 
@@ -97,6 +99,7 @@ wordpress-projects/
 ### 📝 WordPress Configuration
 - **Version Selection**: Choose from multiple WordPress versions
 - **PHP Versions**: Different PHP versions via WordPress Docker images
+- **WP CLI Access**: Full command-line WordPress management for plugins, themes, users, and content
 - **Plugin Development**: Direct access to wp-content for development
 - **Theme Development**: Live file editing with instant updates
 
@@ -191,13 +194,42 @@ wordpress-projects/
 - **Background Operations**: Non-blocking project operations
 - **Auto-refresh**: Real-time updates without manual refresh
 
+## 🔧 WP CLI Integration
+
+### **WordPress Command Line Interface**
+- **Full CLI Access**: Complete WordPress command-line interface integrated into every project
+- **Docker Profile Integration**: WP CLI runs as a separate service using Docker Compose profiles
+- **Plugin Management**: Install, activate, deactivate, update, and manage plugins via command line
+- **Theme Operations**: Install, activate, update, and manage themes programmatically
+- **User Management**: Create, update, delete, and manage WordPress users and roles
+- **Database Operations**: Export, import, search-replace, and optimize databases
+- **Content Management**: Create, update, delete posts, pages, and custom content types
+- **Core Management**: Update WordPress core, check versions, and manage installations
+- **Cache Management**: Clear caches, flush transients, and optimize performance
+- **Development Tools**: Debug commands, configuration management, and development utilities
+
+### **API Integration**
+- **REST API Endpoints**: Run WP CLI commands via HTTP API calls
+- **Batch Operations**: Add WP CLI to multiple projects simultaneously
+- **Remote Management**: Execute WordPress commands from external applications
+- **Progress Monitoring**: Real-time command execution status and output
+
+### **Technical Implementation**
+- **Official Image**: Uses `wordpress:cli-php8.3` Docker image
+- **Shared Environment**: Same database and WordPress installation access
+- **Proper Permissions**: Runs as www-data user (33:33) for file system compatibility
+- **Network Isolation**: Operates within the same Docker network as WordPress services
+- **Volume Sharing**: Access to all WordPress files and database connections
+
 ## 🔮 Future Enhancements
 
 ### 🌟 Planned Features
 - **Multi-site Support**: WordPress multisite networks
 - **Template System**: Pre-configured project templates
-- **Plugin Library**: Common plugin installation
-- **Backup Automation**: Scheduled database and file backups
+- **Plugin Library**: Common plugin installation via WP CLI
+- **Backup Automation**: Scheduled database and file backups using WP CLI
 - **Team Collaboration**: Shared project configurations
 - **Cloud Integration**: Import from cloud repositories
-- **Performance Profiling**: Built-in performance analysis tools 
+- **Performance Profiling**: Built-in performance analysis tools
+- **WP CLI Scripts**: Custom automation scripts and workflows
+- **Bulk Operations**: Mass plugin/theme management across multiple projects 

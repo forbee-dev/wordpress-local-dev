@@ -723,6 +723,29 @@ services:
     depends_on:
       - mysql
 
+  wpcli:
+    image: wordpress:cli-php8.3
+    container_name: ${{PROJECT_NAME}}_wpcli
+    environment:
+      WORDPRESS_DB_HOST: mysql
+      WORDPRESS_DB_USER: ${{DB_USER}}
+      WORDPRESS_DB_PASSWORD: ${{DB_PASSWORD}}
+      WORDPRESS_DB_NAME: ${{DB_NAME}}
+    volumes:
+      - ./wp-content:/var/www/html/wp-content
+      - wordpress_data:/var/www/html
+    networks:
+      - wordpress_network
+    depends_on:
+      - wordpress
+      - mysql
+    profiles:
+      - cli
+    working_dir: /var/www/html
+    user: "33:33"
+    entrypoint: wp
+    command: --info
+
   mysql:
     image: mysql:8.0
     container_name: ${{PROJECT_NAME}}_mysql
@@ -1079,6 +1102,136 @@ echo "wp-config.php updated successfully\\n";
                 
         except Exception as e:
             print(f"   ⚠️  Warning: Error updating wp-config.php: {str(e)}")
+
+    def add_wpcli_to_project(self, project_name):
+        """Add WP CLI service to existing project"""
+        try:
+            project_path = self.projects_dir / project_name
+            if not project_path.exists():
+                return {'success': False, 'error': 'Project not found'}
+            
+            docker_compose_path = project_path / "docker-compose.yml"
+            if docker_compose_path.exists():
+                # Check if WP CLI is already present
+                with open(docker_compose_path, 'r') as f:
+                    compose_content = f.read()
+                
+                if "wpcli:" in compose_content:
+                    print(f"   ✅ WP CLI already configured for {project_name}")
+                    return {'success': True, 'message': 'WP CLI is already configured for this project'}
+                
+                # Read project config to get settings
+                config_path = project_path / "config.json"
+                if config_path.exists():
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    
+                    print(f"   🔄 Updating docker-compose.yml to include WP CLI...")
+                    # Regenerate docker-compose with WP CLI
+                    self._create_docker_compose(
+                        project_path, 
+                        config['name'], 
+                        config.get('wordpress_version', 'php8.3'),
+                        config['domain'], 
+                        config.get('enable_ssl', True), 
+                        config.get('enable_redis', True)
+                    )
+                    print(f"   ✅ Updated docker-compose.yml with WP CLI service")
+                    
+                    return {'success': True, 'message': 'WP CLI service added successfully. Use "docker-compose --profile cli run --rm wpcli <command>" to run WP CLI commands.'}
+                else:
+                    return {'success': False, 'error': 'Project config.json not found'}
+            else:
+                return {'success': False, 'error': 'docker-compose.yml not found'}
+                
+        except Exception as e:
+            print(f"   ❌ Error adding WP CLI: {str(e)}")
+            return {'success': False, 'error': str(e)}
+
+    def add_wpcli_to_all_projects(self):
+        """Add WP CLI service to all existing projects"""
+        projects = self.list_projects()['projects']
+        results = []
+        
+        print(f"🚀 Adding WP CLI to all existing projects...")
+        
+        for project in projects:
+            project_name = project['name']
+            print(f"\n📦 Processing project: {project_name}")
+            result = self.add_wpcli_to_project(project_name)
+            results.append({
+                'project': project_name,
+                'success': result['success'],
+                'message': result.get('message', result.get('error', ''))
+            })
+        
+        # Summary
+        successful = [r for r in results if r['success']]
+        failed = [r for r in results if not r['success']]
+        
+        print(f"\n📊 Summary:")
+        print(f"   ✅ Successful: {len(successful)}/{len(results)}")
+        if failed:
+            print(f"   ❌ Failed: {len(failed)}")
+            for fail in failed:
+                print(f"      • {fail['project']}: {fail['message']}")
+        
+        return {
+            'success': len(failed) == 0,
+            'total': len(results),
+            'successful': len(successful),
+            'failed': len(failed),
+            'results': results
+        }
+
+    def run_wp_cli_command(self, project_name, command):
+        """Run a WP CLI command on a project"""
+        try:
+            project_path = self.projects_dir / project_name
+            if not project_path.exists():
+                return {'success': False, 'error': 'Project not found'}
+            
+            docker_compose_path = project_path / "docker-compose.yml"
+            if not docker_compose_path.exists():
+                return {'success': False, 'error': 'docker-compose.yml not found'}
+            
+            # Check if WP CLI service exists
+            with open(docker_compose_path, 'r') as f:
+                compose_content = f.read()
+            
+            if "wpcli:" not in compose_content:
+                return {'success': False, 'error': 'WP CLI service not configured. Please add WP CLI to this project first.'}
+            
+            # Run the WP CLI command
+            full_command = f"docker-compose --profile cli run --rm wpcli {command}"
+            print(f"🔧 Running WP CLI command: {command}")
+            print(f"   Command: {full_command}")
+            
+            result = subprocess.run(
+                full_command.split(),
+                cwd=project_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                print(f"   ✅ Command executed successfully")
+                return {
+                    'success': True, 
+                    'output': result.stdout,
+                    'command': command
+                }
+            else:
+                print(f"   ❌ Command failed: {result.stderr}")
+                return {
+                    'success': False, 
+                    'error': result.stderr,
+                    'command': command
+                }
+                
+        except Exception as e:
+            print(f"   ❌ Error running WP CLI command: {str(e)}")
+            return {'success': False, 'error': str(e)}
 
     def fix_php_upload_limits(self, project_name):
         """Fix PHP upload limits for an existing project"""
