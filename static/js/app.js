@@ -25,6 +25,11 @@ class WordPressDevApp {
             });
         });
 
+        // Cancel button for database upload modal
+        document.getElementById('cancelUploadButton')?.addEventListener('click', () => {
+            this.closeModal(document.getElementById('dbUploadModal'));
+        });
+
         // Message close
         document.querySelector('.message-close')?.addEventListener('click', () => {
             this.hideMessage();
@@ -579,9 +584,14 @@ class WordPressDevApp {
             return;
         }
 
-        this.showLoading();
-
+        // Initialize progress display
+        this.initializeProgress();
+        
         try {
+            // Step 1: Show upload progress
+            this.updateProgress(25, 'upload', 'active', 'Uploading file...');
+            this.addLog('📤 Starting file upload...');
+            
             const response = await fetch(`/api/projects/${this.currentProject}/upload-db`, {
                 method: 'POST',
                 body: formData
@@ -590,18 +600,226 @@ class WordPressDevApp {
             const result = await response.json();
 
             if (response.ok) {
-                this.showMessage('Database uploaded and imported successfully!', 'success');
-                this.closeModal(document.getElementById('dbUploadModal'));
-                this.loadProjects(); // Refresh project list
+                // Parse the response for progress information
+                await this.simulateProgressSteps(result);
+                
+                // Show success results
+                this.showUploadResults(result);
+                
             } else {
-                this.showMessage(result.error || 'Failed to upload database', 'error');
+                this.handleUploadError(result.error || 'Failed to upload database');
             }
         } catch (error) {
             console.error('Error uploading database:', error);
-            this.showMessage('Failed to upload database. Please try again.', 'error');
-        } finally {
-            this.hideLoading();
+            this.handleUploadError('Failed to upload database. Please try again.');
         }
+    }
+
+    initializeProgress() {
+        // Hide form and show progress
+        document.getElementById('dbUploadForm').style.display = 'none';
+        document.getElementById('uploadProgress').classList.remove('hidden');
+        
+        // Reset progress elements
+        document.getElementById('progressFill').style.width = '0%';
+        document.getElementById('progressText').textContent = '0%';
+        
+        // Reset all steps
+        document.querySelectorAll('.progress-step').forEach(step => {
+            step.classList.remove('active', 'completed', 'error');
+            step.querySelector('.step-status').textContent = '';
+        });
+        
+        // Clear logs except initial message
+        const logsContent = document.getElementById('progressLogs');
+        logsContent.innerHTML = '<div class="log-entry"><span class="log-timestamp">[Starting]</span><span class="log-message">Initializing database upload process...</span></div>';
+        
+        // Ensure logs are visible
+        logsContent.classList.remove('collapsed');
+        
+        // Hide results section
+        document.getElementById('uploadResults').classList.add('hidden');
+        
+        // Set up log toggle button
+        const toggleBtn = document.getElementById('toggleLogs');
+        toggleBtn.onclick = () => this.toggleLogs();
+        
+        // Set up close button for later
+        const closeBtn = document.getElementById('closeSuccessButton');
+        closeBtn.onclick = () => this.closeUploadModal();
+    }
+
+    async simulateProgressSteps(result) {
+        // Step 2: Validation
+        await this.delay(500);
+        this.updateProgress(50, 'validate', 'active', 'Validating file encoding...');
+        this.addLog('🔍 Validating database file...');
+        
+        await this.delay(800);
+        if (result.details && result.details.repair_performed) {
+            this.updateProgress(60, 'validate', 'completed', '⚠️ Issues found');
+            this.addLog('⚠️ UTF-8 encoding issues detected', 'warning');
+            
+            // Step 3: Repair
+            await this.delay(300);
+            this.updateProgress(75, 'repair', 'active', 'Repairing file...');
+            this.addLog('🔧 Automatically repairing database file...');
+            
+            await this.delay(1000);
+            this.updateProgress(80, 'repair', 'completed', '✅ Repaired');
+            this.addLog('✅ File repaired successfully', 'success');
+        } else {
+            this.updateProgress(75, 'validate', 'completed', '✅ Clean');
+            this.addLog('✅ File validation passed - no issues found', 'success');
+            
+            // Skip repair step
+            this.updateProgress(80, 'repair', 'completed', '⏭️ Skipped');
+        }
+        
+        // Step 4: Import
+        await this.delay(300);
+        this.updateProgress(85, 'import', 'active', 'Importing to database...');
+        this.addLog('📋 Importing database to MySQL...');
+        
+        await this.delay(1200);
+        this.updateProgress(100, 'import', 'completed', '✅ Complete');
+        this.addLog('🎉 Database imported successfully!', 'success');
+    }
+
+    updateProgress(percentage, stepId, status, statusText) {
+        // Update progress bar
+        document.getElementById('progressFill').style.width = `${percentage}%`;
+        document.getElementById('progressText').textContent = `${percentage}%`;
+        
+        // Update step status
+        const step = document.getElementById(`step-${stepId}`);
+        if (step) {
+            // Remove old classes
+            step.classList.remove('active', 'completed', 'error');
+            // Add new class
+            step.classList.add(status);
+            // Update status text
+            step.querySelector('.step-status').textContent = statusText;
+        }
+    }
+
+    addLog(message, type = 'info') {
+        const logsContent = document.getElementById('progressLogs');
+        const timestamp = new Date().toLocaleTimeString();
+        const logClass = type !== 'info' ? type : '';
+        
+        const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
+        logEntry.innerHTML = `
+            <span class="log-timestamp">[${timestamp}]</span>
+            <span class="log-message ${logClass}">${message}</span>
+        `;
+        
+        logsContent.appendChild(logEntry);
+        
+        // Auto-scroll to bottom
+        logsContent.scrollTop = logsContent.scrollHeight;
+    }
+
+    showUploadResults(result) {
+        // Show results section
+        document.getElementById('uploadResults').classList.remove('hidden');
+        
+        const resultsContent = document.getElementById('resultsContent');
+        let resultsHTML = '';
+        
+        // File information
+        resultsHTML += `
+            <div class="result-item">
+                <i class="fas fa-file-database result-icon"></i>
+                <span class="result-text">File processed: ${result.details?.final_file || 'Database file'}</span>
+            </div>
+        `;
+        
+        // Validation results
+        if (result.details?.validation_passed) {
+            resultsHTML += `
+                <div class="result-item">
+                    <i class="fas fa-check-circle result-icon"></i>
+                    <span class="result-text">Validation: Passed (no issues found)</span>
+                </div>
+            `;
+        } else if (result.details?.repair_performed) {
+            resultsHTML += `
+                <div class="result-item">
+                    <i class="fas fa-wrench result-icon"></i>
+                    <span class="result-text">Validation: Issues found and automatically repaired</span>
+                </div>
+            `;
+        }
+        
+        // Import status
+        resultsHTML += `
+            <div class="result-item">
+                <i class="fas fa-database result-icon"></i>
+                <span class="result-text">Import: Successfully completed</span>
+            </div>
+        `;
+        
+        // Additional message
+        if (result.message) {
+            resultsHTML += `
+                <div class="result-item">
+                    <i class="fas fa-info-circle result-icon"></i>
+                    <span class="result-text">${result.message}</span>
+                </div>
+            `;
+        }
+        
+        resultsContent.innerHTML = resultsHTML;
+    }
+
+    handleUploadError(errorMessage) {
+        // Update progress to show error
+        this.updateProgress(0, 'upload', 'error', '❌ Failed');
+        this.addLog(`❌ Error: ${errorMessage}`, 'error');
+        
+        // Show error message
+        this.showMessage(errorMessage, 'error');
+        
+        // Enable form again
+        setTimeout(() => {
+            document.getElementById('dbUploadForm').style.display = 'block';
+            document.getElementById('uploadProgress').classList.add('hidden');
+        }, 3000);
+    }
+
+    toggleLogs() {
+        const logsContent = document.getElementById('progressLogs');
+        const toggleBtn = document.getElementById('toggleLogs');
+        const icon = toggleBtn.querySelector('i');
+        
+        if (logsContent.classList.contains('collapsed')) {
+            logsContent.classList.remove('collapsed');
+            icon.className = 'fas fa-eye';
+            toggleBtn.title = 'Hide logs';
+        } else {
+            logsContent.classList.add('collapsed');
+            icon.className = 'fas fa-eye-slash';
+            toggleBtn.title = 'Show logs';
+        }
+    }
+
+    closeUploadModal() {
+        // Reset modal to initial state
+        document.getElementById('dbUploadForm').style.display = 'block';
+        document.getElementById('uploadProgress').classList.add('hidden');
+        document.getElementById('dbUploadForm').reset();
+        
+        // Close modal
+        this.closeModal(document.getElementById('dbUploadModal'));
+        
+        // Refresh project list
+        this.loadProjects();
+    }
+
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     // Auto-refresh projects every 30 seconds

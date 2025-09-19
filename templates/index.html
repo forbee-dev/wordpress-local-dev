@@ -57,8 +57,9 @@
                             <label for="db_file">
                                 <i class="fas fa-database"></i> Database File (optional)
                             </label>
-                            <input type="file" id="db_file" name="db_file" accept=".sql,.mysql,.db">
-                            <small>Upload .sql file to import into the database</small>
+                            <input type="file" id="db_file" name="db_file" accept=".sql,.mysql,.db,.gz">
+                            <small>Upload .sql or .sql.gz file to import into the database<br>
+                            <em>Files are automatically validated and repaired if needed</em></small>
                         </div>
                     </div>
 
@@ -232,8 +233,9 @@
                             <label for="dbUploadFile">
                                 <i class="fas fa-database"></i> Select Database File
                             </label>
-                            <input type="file" id="dbUploadFile" name="db_file" accept=".sql,.mysql,.db" required>
-                            <small>Upload .sql file to replace the current database</small>
+                            <input type="file" id="dbUploadFile" name="db_file" accept=".sql,.mysql,.db,.gz" required>
+                            <small>Upload .sql or .sql.gz file to replace the current database<br>
+                            <em>Files are automatically validated and repaired if needed</em></small>
                         </div>
                         <div class="upload-options">
                             <label class="checkbox">
@@ -243,14 +245,85 @@
                             </label>
                         </div>
                         <div class="modal-actions">
-                            <button type="submit" class="btn btn-primary">
+                            <button type="submit" class="btn btn-primary" id="uploadDbButton">
                                 <i class="fas fa-upload"></i> Upload & Import
                             </button>
-                            <button type="button" class="btn btn-secondary modal-close">
+                            <button type="button" class="btn btn-secondary" id="cancelUploadButton">
                                 Cancel
                             </button>
                         </div>
                     </form>
+                    
+                    <!-- Progress Section (hidden by default) -->
+                    <div id="uploadProgress" class="upload-progress hidden">
+                        <div class="progress-header">
+                            <h4><i class="fas fa-cogs"></i> Processing Database File</h4>
+                        </div>
+                        
+                        <!-- Progress Bar -->
+                        <div class="progress-bar-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                            <span class="progress-text" id="progressText">0%</span>
+                        </div>
+                        
+                        <!-- Progress Steps -->
+                        <div class="progress-steps">
+                            <div class="progress-step" id="step-upload">
+                                <i class="fas fa-upload step-icon"></i>
+                                <span class="step-text">Uploading file...</span>
+                                <span class="step-status"></span>
+                            </div>
+                            <div class="progress-step" id="step-validate">
+                                <i class="fas fa-search step-icon"></i>
+                                <span class="step-text">Validating file...</span>
+                                <span class="step-status"></span>
+                            </div>
+                            <div class="progress-step" id="step-repair">
+                                <i class="fas fa-wrench step-icon"></i>
+                                <span class="step-text">Repairing if needed...</span>
+                                <span class="step-status"></span>
+                            </div>
+                            <div class="progress-step" id="step-import">
+                                <i class="fas fa-database step-icon"></i>
+                                <span class="step-text">Importing database...</span>
+                                <span class="step-status"></span>
+                            </div>
+                        </div>
+                        
+                        <!-- Progress Logs -->
+                        <div class="progress-logs">
+                            <div class="logs-header">
+                                <h5><i class="fas fa-terminal"></i> Process Logs</h5>
+                                <button type="button" class="btn-icon" id="toggleLogs" title="Toggle logs">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                            <div class="progress-logs-content" id="progressLogs">
+                                <div class="log-entry">
+                                    <span class="log-timestamp">[Starting]</span>
+                                    <span class="log-message">Initializing database upload process...</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Results Section -->
+                        <div id="uploadResults" class="upload-results hidden">
+                            <div class="results-header">
+                                <i class="fas fa-check-circle success-icon"></i>
+                                <h4>Upload Complete!</h4>
+                            </div>
+                            <div class="results-content" id="resultsContent">
+                                <!-- Results will be populated by JavaScript -->
+                            </div>
+                            <div class="results-actions">
+                                <button type="button" class="btn btn-primary" id="closeSuccessButton">
+                                    <i class="fas fa-check"></i> Done
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

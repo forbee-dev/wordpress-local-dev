@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import platform
 import re
+import gzip
 from pathlib import Path
 import yaml
 from .ssl_generator import SSLGenerator
@@ -236,6 +237,14 @@ class ProjectManager:
             )
             
             if result.returncode == 0:
+                # Give containers a moment to fully start
+                import time
+                time.sleep(5)
+                
+                # Fix wp-config.php to properly read debug environment variables
+                print(f"   🔧 Configuring WordPress debug settings...")
+                self._fix_wp_config_debug(project_name)
+                
                 return {'success': True, 'message': 'Project started successfully'}
             else:
                 return {'success': False, 'error': result.stderr}
@@ -369,8 +378,81 @@ class ProjectManager:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
+    def _is_gzipped_file(self, file_path):
+        """Check if a file is gzipped by reading its magic bytes"""
+        try:
+            with open(file_path, 'rb') as f:
+                # Read first 2 bytes to check for gzip magic number (0x1f, 0x8b)
+                magic = f.read(2)
+                return magic == b'\x1f\x8b'
+        except Exception:
+            return False
+    
+    def _read_database_file(self, file_path):
+        """Read database file content, handling both regular and gzipped files"""
+        try:
+            file_path_obj = Path(file_path)
+            
+            # Check if file is gzipped by extension or magic bytes
+            is_gzipped = (
+                file_path_obj.suffix.lower() == '.gz' or 
+                file_path_obj.name.lower().endswith('.sql.gz') or
+                self._is_gzipped_file(file_path)
+            )
+            
+            if is_gzipped:
+                print(f"   📦 Detected gzipped database file, decompressing...")
+                try:
+                    # Try UTF-8 first
+                    with gzip.open(file_path, 'rt', encoding='utf-8') as f:
+                        return f.read()
+                except UnicodeDecodeError:
+                    print(f"   ⚠️  UTF-8 decode failed, trying with error handling...")
+                    # Fallback: read with error handling to skip invalid bytes
+                    with gzip.open(file_path, 'rt', encoding='utf-8', errors='replace') as f:
+                        content = f.read()
+                        print(f"   ✅ File read with {content.count('�')} replacement characters")
+                        return content
+            else:
+                print(f"   📄 Reading plain text database file...")
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        return f.read()
+                except UnicodeDecodeError:
+                    print(f"   ⚠️  UTF-8 decode failed, trying with error handling...")
+                    # Fallback: read with error handling to skip invalid bytes
+                    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                        content = f.read()
+                        print(f"   ✅ File read with {content.count('�')} replacement characters")
+                        return content
+                    
+        except Exception as e:
+            # One more fallback: try reading as binary and decode with latin1 (which maps all bytes)
+            try:
+                print(f"   🔄 Trying binary mode with latin1 encoding as final fallback...")
+                if is_gzipped:
+                    with gzip.open(file_path, 'rb') as f:
+                        content_bytes = f.read()
+                else:
+                    with open(file_path, 'rb') as f:
+                        content_bytes = f.read()
+                
+                # Try to decode as UTF-8 with replacement characters
+                try:
+                    content = content_bytes.decode('utf-8', errors='replace')
+                    print(f"   ✅ Binary fallback successful with UTF-8 replacement")
+                    return content
+                except:
+                    # Final fallback: latin1 (maps all bytes 1:1)
+                    content = content_bytes.decode('latin1')
+                    print(f"   ✅ Binary fallback successful with latin1 encoding")
+                    return content
+                    
+            except Exception as final_e:
+                raise Exception(f"Failed to read database file with all fallback methods. Last error: {str(final_e)}")
+
     def import_database(self, project_name, db_file_path, backup_before_import=True):
-        """Import database file into existing project"""
+        """Import database file into existing project (supports both .sql and .sql.gz files)"""
         project_path = self.projects_dir / project_name
         if not project_path.exists():
             return {'success': False, 'error': 'Project not found'}
@@ -380,6 +462,10 @@ class ProjectManager:
             status = self.get_project_status(project_name)
             if status.get('status') != 'running':
                 return {'success': False, 'error': 'Project must be running to import database. Please start the project first.'}
+            
+            # Validate database file exists
+            if not Path(db_file_path).exists():
+                return {'success': False, 'error': f'Database file not found: {db_file_path}'}
             
             # Read environment variables
             env_file = project_path / '.env'
@@ -413,19 +499,25 @@ class ProjectManager:
                 else:
                     print(f"Warning: Failed to backup database: {backup_result.stderr}")
             
+            # Read database content (handles both plain and gzipped files)
+            print(f"📋 Reading database file: {Path(db_file_path).name}")
+            db_content = self._read_database_file(db_file_path)
+            
             # Import new database
-            with open(db_file_path, 'r') as f:
-                import_result = subprocess.run([
-                    'docker-compose', 'exec', '-T', 'mysql',
-                    'mysql', f'-u{db_user}', f'-p{db_password}', db_name
-                ], input=f.read(), cwd=project_path, capture_output=True, text=True)
+            import_result = subprocess.run([
+                'docker-compose', 'exec', '-T', 'mysql',
+                'mysql', f'-u{db_user}', f'-p{db_password}', db_name
+            ], input=db_content, cwd=project_path, capture_output=True, text=True)
             
             if import_result.returncode == 0:
+                print(f"   ✅ Database imported successfully")
                 return {'success': True, 'message': 'Database imported successfully'}
             else:
+                print(f"   ❌ Database import failed: {import_result.stderr}")
                 return {'success': False, 'error': f'Database import failed: {import_result.stderr}'}
                 
         except Exception as e:
+            print(f"   ❌ Error importing database: {str(e)}")
             return {'success': False, 'error': str(e)}
     
     def _clone_repository(self, repo_url, project_path):

@@ -3,6 +3,8 @@ import json
 import shutil
 import subprocess
 import platform
+import gzip
+import re
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from pathlib import Path
@@ -25,6 +27,116 @@ wordpress_versions_cache = {
     'timestamp': 0,
     'cache_duration': 3600  # 1 hour in seconds
 }
+
+def is_gzipped_file(file_path):
+    """Check if a file is gzipped by reading its magic bytes"""
+    try:
+        with open(file_path, 'rb') as f:
+            magic = f.read(2)
+            return magic == b'\x1f\x8b'
+    except Exception:
+        return False
+
+def validate_and_repair_database(file_path):
+    """Validate a database file and repair if needed"""
+    file_path = Path(file_path)
+    
+    # Check if file is gzipped
+    is_gzipped = (
+        file_path.suffix.lower() == '.gz' or 
+        file_path.name.lower().endswith('.sql.gz') or
+        is_gzipped_file(file_path)
+    )
+    
+    print(f"📋 Validating database file: {file_path.name}")
+    print(f"   📦 File type: {'Gzipped SQL' if is_gzipped else 'Plain SQL'}")
+    print(f"   📏 File size: {file_path.stat().st_size:,} bytes")
+    
+    try:
+        # Test if file can be read cleanly
+        if is_gzipped:
+            try:
+                with gzip.open(file_path, 'rt', encoding='utf-8') as f:
+                    content = f.read()
+                print("   ✅ File validation: Perfect UTF-8 encoding")
+                return str(file_path), None  # No repair needed
+            except UnicodeDecodeError as e:
+                print(f"   ⚠️  UTF-8 decode error found: {str(e)[:100]}...")
+                return repair_database_file(file_path, is_gzipped)
+        else:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                print("   ✅ File validation: Perfect UTF-8 encoding")
+                return str(file_path), None  # No repair needed
+            except UnicodeDecodeError as e:
+                print(f"   ⚠️  UTF-8 decode error found: {str(e)[:100]}...")
+                return repair_database_file(file_path, is_gzipped)
+                
+    except Exception as e:
+        print(f"   ❌ Validation error: {str(e)}")
+        return str(file_path), f"Validation failed: {str(e)}"
+
+def repair_database_file(file_path, is_gzipped):
+    """Repair a database file with encoding issues"""
+    file_path = Path(file_path)
+    
+    # Create repaired filename
+    if file_path.name.endswith('.sql.gz'):
+        repaired_name = file_path.name.replace('.sql.gz', '_repaired.sql.gz')
+    elif file_path.name.endswith('.sql'):
+        repaired_name = file_path.name.replace('.sql', '_repaired.sql')
+    else:
+        repaired_name = f"{file_path.stem}_repaired{file_path.suffix}"
+    
+    repaired_path = file_path.parent / repaired_name
+    
+    print(f"   🔧 Repairing file: {repaired_name}")
+    
+    try:
+        # Read with error handling
+        print("   📖 Reading file with error replacement...")
+        if is_gzipped:
+            with gzip.open(file_path, 'rt', encoding='utf-8', errors='replace') as input_file:
+                content = input_file.read()
+        else:
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as input_file:
+                content = input_file.read()
+        
+        # Clean the content
+        print("   🧹 Cleaning content...")
+        original_length = len(content)
+        
+        # Remove replacement characters (�)
+        cleaned_content = content.replace('�', '')
+        
+        # Remove control characters that shouldn't be in SQL
+        cleaned_content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', cleaned_content)
+        
+        final_length = len(cleaned_content)
+        removed_chars = original_length - final_length
+        
+        print(f"   ✂️  Removed {removed_chars:,} problematic characters")
+        
+        # Write cleaned version
+        print("   💾 Writing cleaned file...")
+        if is_gzipped:
+            with gzip.open(repaired_path, 'wt', encoding='utf-8') as output_file:
+                output_file.write(cleaned_content)
+        else:
+            with open(repaired_path, 'w', encoding='utf-8') as output_file:
+                output_file.write(cleaned_content)
+        
+        print(f"   ✅ Repaired file created: {repaired_name}")
+        print(f"   📊 Original: {file_path.stat().st_size:,} bytes")
+        print(f"   📊 Repaired: {repaired_path.stat().st_size:,} bytes")
+        print(f"   📊 Cleaned: {removed_chars:,} characters")
+        
+        return str(repaired_path), f"File repaired: removed {removed_chars:,} corrupted characters"
+        
+    except Exception as e:
+        print(f"   ❌ Repair failed: {str(e)}")
+        return str(file_path), f"Repair failed: {str(e)}"
 
 @app.route('/')
 def index():
@@ -200,6 +312,7 @@ def create_project():
     try:
         # Handle file upload
         db_file_path = None
+        validation_message = None
         if 'db_file' in request.files:
             file = request.files['db_file']
             if file and file.filename:
@@ -209,8 +322,25 @@ def create_project():
                 
                 # Save the uploaded file
                 filename = secure_filename(file.filename)
-                db_file_path = uploads_dir / filename
-                file.save(str(db_file_path))
+                temp_db_path = uploads_dir / filename
+                file.save(str(temp_db_path))
+                
+                print(f"🔄 Validating uploaded database file during project creation")
+                
+                # Validate and repair the database file if needed
+                final_db_path, repair_message = validate_and_repair_database(temp_db_path)
+                db_file_path = Path(final_db_path)
+                
+                if repair_message:
+                    validation_message = f"Database file repaired: {repair_message}"
+                    # Clean up original if repaired version was created
+                    if final_db_path != str(temp_db_path):
+                        try:
+                            os.remove(str(temp_db_path))
+                        except:
+                            pass
+                else:
+                    validation_message = "Database file validation passed"
         
         # Get form data
         project_name = request.form.get('project_name')
@@ -238,7 +368,13 @@ def create_project():
         )
         
         if result['success']:
-            return jsonify({'message': 'Project created successfully!', 'project': result['project']})
+            response_data = {
+                'message': 'Project created successfully!',
+                'project': result['project']
+            }
+            if validation_message:
+                response_data['validation_message'] = validation_message
+            return jsonify(response_data)
         else:
             return jsonify({'error': result['error']}), 400
             
@@ -314,7 +450,7 @@ def clear_debug_logs(project_name):
 
 @app.route('/api/projects/<project_name>/upload-db', methods=['POST'])
 def upload_database(project_name):
-    """Upload and import database file for existing project"""
+    """Upload and import database file for existing project with automatic validation and repair"""
     try:
         # Check if project exists
         project_path = Path('wordpress-projects') / project_name
@@ -340,24 +476,65 @@ def upload_database(project_name):
         db_file_path = data_dir / filename
         file.save(str(db_file_path))
         
-        # Import the database
+        print(f"🔄 Processing uploaded database file for project: {project_name}")
+        
+        # Validate and repair the database file if needed
+        final_db_path, repair_message = validate_and_repair_database(db_file_path)
+        
+        # Prepare response message
+        messages = []
+        if repair_message:
+            messages.append(f"🔧 {repair_message}")
+            messages.append(f"📁 Using repaired file: {Path(final_db_path).name}")
+        else:
+            messages.append("✅ File validation passed - no repair needed")
+        
+        # Import the database (original or repaired version)
+        print(f"📋 Importing database from: {Path(final_db_path).name}")
         result = project_manager.import_database(
             project_name=project_name,
-            db_file_path=str(db_file_path),
+            db_file_path=final_db_path,
             backup_before_import=backup_before_upload
         )
         
         if result['success']:
-            return jsonify({'message': 'Database uploaded and imported successfully!'})
+            messages.append("✅ Database imported successfully!")
+            
+            # Clean up: remove original file if a repaired version was created
+            if repair_message and final_db_path != str(db_file_path):
+                try:
+                    os.remove(str(db_file_path))
+                    messages.append(f"🧹 Cleaned up original file")
+                except:
+                    pass  # Don't fail if cleanup fails
+            
+            return jsonify({
+                'message': ' | '.join(messages),
+                'details': {
+                    'validation_passed': repair_message is None,
+                    'repair_performed': repair_message is not None,
+                    'final_file': Path(final_db_path).name,
+                    'import_successful': True
+                }
+            })
         else:
-            return jsonify({'error': result['error']}), 400
+            return jsonify({
+                'error': f"Database import failed: {result['error']}",
+                'details': {
+                    'validation_passed': repair_message is None,
+                    'repair_performed': repair_message is not None,
+                    'final_file': Path(final_db_path).name,
+                    'import_successful': False
+                }
+            }), 400
             
     except Exception as e:
+        print(f"❌ Error in upload_database: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/import-database/<project_name>', methods=['POST'])
-def import_database(project_name):
-    """Import database for a project"""
+def import_database_legacy(project_name):
+    """Import database for a project (legacy endpoint with automatic validation and repair)"""
     try:
         if 'db_file' not in request.files:
             return jsonify({'error': 'No database file provided'}), 400
@@ -372,20 +549,34 @@ def import_database(project_name):
         
         # Save the uploaded file
         filename = secure_filename(file.filename)
-        db_file_path = uploads_dir / filename
-        file.save(str(db_file_path))
+        temp_db_path = uploads_dir / filename
+        file.save(str(temp_db_path))
         
-        # Import the database
-        result = project_manager.import_database(project_name, str(db_file_path))
+        print(f"🔄 Processing uploaded database file for legacy import: {project_name}")
         
-        # Clean up uploaded file
+        # Validate and repair the database file if needed
+        final_db_path, repair_message = validate_and_repair_database(temp_db_path)
+        
+        # Import the database (original or repaired version)
+        result = project_manager.import_database(project_name, final_db_path)
+        
+        # Clean up uploaded files
         try:
-            db_file_path.unlink()
+            if final_db_path != str(temp_db_path):
+                # Remove both original and repaired files for legacy endpoint
+                os.remove(str(temp_db_path))
+                os.remove(final_db_path)
+            else:
+                # Remove original file only
+                os.remove(str(temp_db_path))
         except:
             pass
         
         if result['success']:
-            return jsonify({'message': result['message']})
+            response_data = {'message': result['message']}
+            if repair_message:
+                response_data['validation_message'] = f"File was repaired: {repair_message}"
+            return jsonify(response_data)
         else:
             return jsonify({'error': result['error']}), 400
             
