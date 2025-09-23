@@ -1165,8 +1165,9 @@ status: ## Show container status
     def _fix_wp_config_debug(self, project_name):
         """Fix wp-config.php to properly read debug environment variables"""
         try:
-            # Create the PHP script to fix wp-config.php
-            fix_script = '''<?php
+            # Create a temporary PHP script file
+            fix_script_path = self.projects_dir / project_name / "fix_debug.php"
+            fix_script_content = '''<?php
 $content = file_get_contents('/var/www/html/wp-config.php');
 
 $old = "define( 'WP_DEBUG', !!getenv_docker('WORDPRESS_DEBUG', '') );";
@@ -1178,14 +1179,28 @@ $content = str_replace($old, $new, $content);
 file_put_contents('/var/www/html/wp-config.php', $content);
 echo "wp-config.php updated successfully\\n";
 ?>'''
-
+            
+            # Write the script to a file
+            with open(fix_script_path, 'w') as f:
+                f.write(fix_script_content)
+            
+            # Copy the script to wp-content directory
+            wp_content_script_path = self.projects_dir / project_name / "wp-content" / "fix_debug.php"
+            shutil.copy2(fix_script_path, wp_content_script_path)
+            
             # Run the fix script in the WordPress container
             result = subprocess.run(
-                ['docker-compose', 'exec', '-T', 'wordpress', 'php', '-r', fix_script],
+                ['docker-compose', 'exec', '-T', 'wordpress', 'php', '/var/www/html/wp-content/fix_debug.php'],
                 cwd=self.projects_dir / project_name,
                 capture_output=True,
                 text=True
             )
+            
+            # Clean up the temporary files
+            if fix_script_path.exists():
+                fix_script_path.unlink()
+            if wp_content_script_path.exists():
+                wp_content_script_path.unlink()
             
             if result.returncode == 0:
                 print(f"   ✅ WordPress debug configuration updated")
