@@ -25,10 +25,6 @@ class WordPressDevApp {
             });
         });
 
-        // Cancel button for database upload modal
-        document.getElementById('cancelUploadButton')?.addEventListener('click', () => {
-            this.closeModal(document.getElementById('dbUploadModal'));
-        });
 
         // Message close
         document.querySelector('.message-close')?.addEventListener('click', () => {
@@ -37,33 +33,84 @@ class WordPressDevApp {
 
         // Project action buttons
         document.getElementById('startBtn')?.addEventListener('click', () => {
-            this.startProject(this.currentProject);
+            this.startProject(this.currentProject.name);
         });
 
         document.getElementById('stopBtn')?.addEventListener('click', () => {
-            this.stopProject(this.currentProject);
+            this.stopProject(this.currentProject.name);
         });
 
         document.getElementById('logsBtn')?.addEventListener('click', () => {
-            this.showLogs(this.currentProject);
+            this.showLogs(this.currentProject.name);
         });
 
         document.getElementById('debugLogsBtn')?.addEventListener('click', () => {
-            this.showDebugLogs(this.currentProject);
+            this.showDebugLogs(this.currentProject.name);
         });
 
         document.getElementById('deleteBtn')?.addEventListener('click', () => {
-            this.deleteProject(this.currentProject);
+            this.deleteProject(this.currentProject.name);
         });
 
-        document.getElementById('uploadDbBtn')?.addEventListener('click', () => {
-            this.showUploadDbModal();
+
+        document.getElementById('updateBtn')?.addEventListener('click', () => {
+            this.showUpdateProjectModal();
         });
 
-        // Database upload form submission
-        document.getElementById('dbUploadForm')?.addEventListener('submit', (e) => {
+        // Database upload form submission (in update modal)
+        document.getElementById('updateDatabaseForm')?.addEventListener('submit', (e) => {
             e.preventDefault();
             this.uploadDatabase();
+        });
+
+        // Update project form submissions
+        document.getElementById('updateWordPressForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.updateWordPressVersion();
+        });
+
+        document.getElementById('updateDomainForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.updateDomain();
+        });
+
+        document.getElementById('updateRepositoryForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.updateRepository();
+        });
+
+        document.getElementById('updateConfigForm')?.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.updateProjectConfig();
+        });
+
+        // Cancel buttons for update modal tabs
+        document.getElementById('cancelDatabaseUpdate')?.addEventListener('click', () => {
+            this.switchUpdateTab('wordpress');
+        });
+
+        // Update modal tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                this.switchUpdateTab(e.target.dataset.tab);
+            });
+        });
+
+        // Update modal cancel buttons
+        document.getElementById('cancelWordPressUpdate')?.addEventListener('click', () => {
+            this.closeModal(document.getElementById('updateProjectModal'));
+        });
+
+        document.getElementById('cancelDomainUpdate')?.addEventListener('click', () => {
+            this.closeModal(document.getElementById('updateProjectModal'));
+        });
+
+        document.getElementById('cancelRepositoryUpdate')?.addEventListener('click', () => {
+            this.closeModal(document.getElementById('updateProjectModal'));
+        });
+
+        document.getElementById('cancelConfigUpdate')?.addEventListener('click', () => {
+            this.closeModal(document.getElementById('updateProjectModal'));
         });
 
         // Click outside modal to close
@@ -209,7 +256,7 @@ class WordPressDevApp {
     }
 
     showProjectModal(project) {
-        this.currentProject = project.name;
+        this.currentProject = project;
         
         document.getElementById('modalProjectName').textContent = project.name;
         document.getElementById('modalDomain').textContent = project.domain;
@@ -380,7 +427,7 @@ class WordPressDevApp {
         
         try {
             const lines = document.getElementById('debugLogsLines')?.value || 50;
-            const response = await fetch(`/api/projects/${this.currentProject}/debug-logs?lines=${lines}`);
+            const response = await fetch(`/api/projects/${this.currentProject.name}/debug-logs?lines=${lines}`);
             const result = await response.json();
             
             if (response.ok) {
@@ -435,7 +482,7 @@ class WordPressDevApp {
         this.showLoading();
         
         try {
-            const response = await fetch(`/api/projects/${this.currentProject}/debug-logs/clear`, {
+            const response = await fetch(`/api/projects/${this.currentProject.name}/debug-logs/clear`, {
                 method: 'POST'
             });
             const result = await response.json();
@@ -562,22 +609,13 @@ class WordPressDevApp {
         document.getElementById('messageContainer').classList.add('hidden');
     }
 
-    showUploadDbModal() {
-        if (!this.currentProject) return;
-        
-        // Reset form
-        document.getElementById('dbUploadForm').reset();
-        document.getElementById('backupBeforeUpload').checked = true;
-        
-        this.showModal('dbUploadModal');
-    }
 
     async uploadDatabase() {
         if (!this.currentProject) return;
 
-        const form = document.getElementById('dbUploadForm');
+        const form = document.getElementById('updateDatabaseForm');
         const formData = new FormData(form);
-        const fileInput = document.getElementById('dbUploadFile');
+        const fileInput = document.getElementById('updateDbFile');
 
         if (!fileInput.files.length) {
             this.showMessage('Please select a database file', 'error');
@@ -585,14 +623,14 @@ class WordPressDevApp {
         }
 
         // Initialize progress display
-        this.initializeProgress();
+        this.initializeUploadProgress();
         
         try {
             // Step 1: Show upload progress
             this.updateProgress(25, 'upload', 'active', 'Uploading file...');
             this.addLog('📤 Starting file upload...');
             
-            const response = await fetch(`/api/projects/${this.currentProject}/upload-db`, {
+            const response = await fetch(`/api/projects/${this.currentProject.name}/upload-db`, {
                 method: 'POST',
                 body: formData
             });
@@ -600,13 +638,17 @@ class WordPressDevApp {
             const result = await response.json();
 
             if (response.ok) {
-                // Parse the response for progress information
-                await this.simulateProgressSteps(result);
+                // Display real server logs instead of simulated progress
+                await this.displayServerLogs(result);
                 
                 // Show success results
                 this.showUploadResults(result);
                 
             } else {
+                // Show server logs even on error
+                if (result.logs) {
+                    await this.displayServerLogs(result);
+                }
                 this.handleUploadError(result.error || 'Failed to upload database');
             }
         } catch (error) {
@@ -615,84 +657,95 @@ class WordPressDevApp {
         }
     }
 
-    initializeProgress() {
+    initializeUploadProgress() {
         // Hide form and show progress
-        document.getElementById('dbUploadForm').style.display = 'none';
-        document.getElementById('uploadProgress').classList.remove('hidden');
+        document.getElementById('updateDatabaseForm').style.display = 'none';
+        document.getElementById('updateUploadProgress').classList.remove('hidden');
         
         // Reset progress elements
-        document.getElementById('progressFill').style.width = '0%';
-        document.getElementById('progressText').textContent = '0%';
+        document.getElementById('updateProgressFill').style.width = '0%';
+        document.getElementById('updateProgressText').textContent = '0%';
         
         // Reset all steps
-        document.querySelectorAll('.progress-step').forEach(step => {
+        document.querySelectorAll('#tab-database .progress-step').forEach(step => {
             step.classList.remove('active', 'completed', 'error');
             step.querySelector('.step-status').textContent = '';
         });
         
         // Clear logs except initial message
-        const logsContent = document.getElementById('progressLogs');
+        const logsContent = document.getElementById('updateProgressLogs');
         logsContent.innerHTML = '<div class="log-entry"><span class="log-timestamp">[Starting]</span><span class="log-message">Initializing database upload process...</span></div>';
         
         // Ensure logs are visible
         logsContent.classList.remove('collapsed');
         
         // Hide results section
-        document.getElementById('uploadResults').classList.add('hidden');
+        document.getElementById('updateUploadResults').classList.add('hidden');
         
         // Set up log toggle button
-        const toggleBtn = document.getElementById('toggleLogs');
-        toggleBtn.onclick = () => this.toggleLogs();
+        const toggleBtn = document.getElementById('updateToggleLogs');
+        toggleBtn.onclick = () => this.toggleUploadLogs();
         
         // Set up close button for later
-        const closeBtn = document.getElementById('closeSuccessButton');
+        const closeBtn = document.getElementById('updateCloseSuccessButton');
         closeBtn.onclick = () => this.closeUploadModal();
     }
 
-    async simulateProgressSteps(result) {
-        // Step 2: Validation
-        await this.delay(500);
-        this.updateProgress(50, 'validate', 'active', 'Validating file encoding...');
-        this.addLog('🔍 Validating database file...');
+    async displayServerLogs(result) {
+        // Process server logs and update progress accordingly
+        const logs = result.logs || [];
         
-        await this.delay(800);
-        if (result.details && result.details.repair_performed) {
-            this.updateProgress(60, 'validate', 'completed', '⚠️ Issues found');
-            this.addLog('⚠️ UTF-8 encoding issues detected', 'warning');
+        let currentProgress = 25; // Start after upload
+        
+        // Initial validation step
+        this.updateProgress(50, 'validate', 'active', 'Processing...');
+        await this.delay(300);
+        
+        // Display each server log with appropriate timing
+        for (let i = 0; i < logs.length; i++) {
+            const log = logs[i];
+            const message = log.message || log;
             
-            // Step 3: Repair
-            await this.delay(300);
-            this.updateProgress(75, 'repair', 'active', 'Repairing file...');
-            this.addLog('🔧 Automatically repairing database file...');
+            // Add the real server log to UI
+            this.addLog(message);
             
-            await this.delay(1000);
-            this.updateProgress(80, 'repair', 'completed', '✅ Repaired');
-            this.addLog('✅ File repaired successfully', 'success');
-        } else {
-            this.updateProgress(75, 'validate', 'completed', '✅ Clean');
-            this.addLog('✅ File validation passed - no issues found', 'success');
+            // Update progress based on log content
+            if (message.includes('Creating database backup')) {
+                this.updateProgress(60, 'backup', 'active', 'Creating backup...');
+            } else if (message.includes('Database backed up') || message.includes('backup successful')) {
+                this.updateProgress(70, 'backup', 'completed', '✅ Backed up');
+            } else if (message.includes('Clearing database')) {
+                this.updateProgress(75, 'backup', 'completed', '✅ Ready');
+            } else if (message.includes('Database cleared')) {
+                this.updateProgress(80, 'validate', 'completed', '✅ Clean');
+            } else if (message.includes('Trying original file') || message.includes('Trying repaired file')) {
+                this.updateProgress(85, 'import', 'active', 'Importing...');
+            } else if (message.includes('Database imported successfully')) {
+                this.updateProgress(100, 'import', 'completed', '✅ Complete');
+            } else if (message.includes('Error') || message.includes('failed')) {
+                // Don't update progress on errors, just show the log
+            }
             
-            // Skip repair step
-            this.updateProgress(80, 'repair', 'completed', '⏭️ Skipped');
+            // Add slight delay between logs for readability
+            if (i < logs.length - 1) {
+                await this.delay(150);
+            }
         }
         
-        // Step 4: Import
-        await this.delay(300);
-        this.updateProgress(85, 'import', 'active', 'Importing to database...');
-        this.addLog('📋 Importing database to MySQL...');
-        
-        await this.delay(1200);
-        this.updateProgress(100, 'import', 'completed', '✅ Complete');
-        this.addLog('🎉 Database imported successfully!', 'success');
+        // Ensure we end at 100% on success
+        if (result.details && result.details.import_successful) {
+            this.updateProgress(100, 'import', 'completed', '✅ Complete');
+            this.addLog('🎉 Database import completed successfully!', 'success');
+        }
     }
 
     updateProgress(percentage, stepId, status, statusText) {
         // Update progress bar
-        document.getElementById('progressFill').style.width = `${percentage}%`;
-        document.getElementById('progressText').textContent = `${percentage}%`;
+        document.getElementById('updateProgressFill').style.width = `${percentage}%`;
+        document.getElementById('updateProgressText').textContent = `${percentage}%`;
         
         // Update step status
-        const step = document.getElementById(`step-${stepId}`);
+        const step = document.getElementById(`update-step-${stepId}`);
         if (step) {
             // Remove old classes
             step.classList.remove('active', 'completed', 'error');
@@ -704,7 +757,7 @@ class WordPressDevApp {
     }
 
     addLog(message, type = 'info') {
-        const logsContent = document.getElementById('progressLogs');
+        const logsContent = document.getElementById('updateProgressLogs');
         const timestamp = new Date().toLocaleTimeString();
         const logClass = type !== 'info' ? type : '';
         
@@ -723,9 +776,9 @@ class WordPressDevApp {
 
     showUploadResults(result) {
         // Show results section
-        document.getElementById('uploadResults').classList.remove('hidden');
+        document.getElementById('updateUploadResults').classList.remove('hidden');
         
-        const resultsContent = document.getElementById('resultsContent');
+        const resultsContent = document.getElementById('updateResultsContent');
         let resultsHTML = '';
         
         // File information
@@ -784,14 +837,14 @@ class WordPressDevApp {
         
         // Enable form again
         setTimeout(() => {
-            document.getElementById('dbUploadForm').style.display = 'block';
-            document.getElementById('uploadProgress').classList.add('hidden');
+            document.getElementById('updateDatabaseForm').style.display = 'block';
+            document.getElementById('updateUploadProgress').classList.add('hidden');
         }, 3000);
     }
 
-    toggleLogs() {
-        const logsContent = document.getElementById('progressLogs');
-        const toggleBtn = document.getElementById('toggleLogs');
+    toggleUploadLogs() {
+        const logsContent = document.getElementById('updateProgressLogs');
+        const toggleBtn = document.getElementById('updateToggleLogs');
         const icon = toggleBtn.querySelector('i');
         
         if (logsContent.classList.contains('collapsed')) {
@@ -807,12 +860,12 @@ class WordPressDevApp {
 
     closeUploadModal() {
         // Reset modal to initial state
-        document.getElementById('dbUploadForm').style.display = 'block';
-        document.getElementById('uploadProgress').classList.add('hidden');
-        document.getElementById('dbUploadForm').reset();
+        document.getElementById('updateDatabaseForm').style.display = 'block';
+        document.getElementById('updateUploadProgress').classList.add('hidden');
+        document.getElementById('updateDatabaseForm').reset();
         
-        // Close modal
-        this.closeModal(document.getElementById('dbUploadModal'));
+        // Switch back to first tab in update modal
+        this.switchUpdateTab('wordpress');
         
         // Refresh project list
         this.loadProjects();
@@ -820,6 +873,227 @@ class WordPressDevApp {
 
     delay(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    showUpdateProjectModal() {
+        if (!this.currentProject) return;
+        
+        // Populate current values
+        this.populateUpdateForm();
+        
+        // Show modal
+        this.showModal('updateProjectModal');
+    }
+
+    populateUpdateForm() {
+        if (!this.currentProject) return;
+
+        // Populate WordPress version dropdown
+        this.populateWordPressVersions('updateWordPressVersion');
+        
+        // Set current values
+        document.getElementById('updateDomain').value = this.currentProject.domain || '';
+        document.getElementById('updateRepoUrl').value = this.currentProject.repo_url || '';
+        document.getElementById('updateCustomDomain').value = this.currentProject.custom_domain || '';
+        document.getElementById('updateSubfolder').value = this.currentProject.subfolder || '';
+        document.getElementById('updateEnableSSL').checked = this.currentProject.enable_ssl || false;
+        document.getElementById('updateConfigSSL').checked = this.currentProject.enable_ssl || false;
+        document.getElementById('updateConfigRedis').checked = this.currentProject.enable_redis || false;
+    }
+
+    async populateWordPressVersions(selectId) {
+        try {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            
+            select.innerHTML = '<option value="">Loading WordPress versions...</option>';
+            
+            const response = await fetch('/api/wordpress-versions');
+            const versions = await response.json();
+            
+            select.innerHTML = '<option value="">Select WordPress version...</option>';
+            
+            versions.forEach(version => {
+                const option = document.createElement('option');
+                option.value = version.version;
+                option.textContent = version.description;
+                select.appendChild(option);
+            });
+            
+            console.log(`Loaded ${versions.length} WordPress versions for ${selectId}`);
+        } catch (error) {
+            console.error('Error loading WordPress versions:', error);
+            const select = document.getElementById(selectId);
+            if (select) {
+                select.innerHTML = '<option value="">Error loading versions - refresh page</option>';
+            }
+        }
+    }
+
+    switchUpdateTab(tabName) {
+        // Update tab buttons
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+        // Update tab content
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        document.getElementById(`tab-${tabName}`).classList.add('active');
+    }
+
+    async updateWordPressVersion() {
+        if (!this.currentProject) return;
+
+        const form = document.getElementById('updateWordPressForm');
+        const formData = new FormData(form);
+        const version = formData.get('version');
+
+        if (!version) {
+            this.showMessage('Please select a WordPress version', 'error');
+            return;
+        }
+
+        this.showLoading();
+
+        try {
+            const response = await fetch(`/api/projects/${this.currentProject.name}/update-wordpress-version`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ version })
+            });
+
+            const result = await response.json();
+
+            if (result.message) {
+                this.showMessage(result.message, 'success');
+                this.closeModal(document.getElementById('updateProjectModal'));
+                this.loadProjects();
+            } else {
+                this.showMessage(result.error || 'Failed to update WordPress version', 'error');
+            }
+        } catch (error) {
+            this.showMessage('Error updating WordPress version: ' + error.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async updateDomain() {
+        if (!this.currentProject) return;
+
+        const form = document.getElementById('updateDomainForm');
+        const formData = new FormData(form);
+        const domain = formData.get('domain');
+        const enableSSL = formData.get('enable_ssl') === 'on';
+
+        if (!domain) {
+            this.showMessage('Please enter a domain', 'error');
+            return;
+        }
+
+        this.showLoading();
+
+        try {
+            const response = await fetch(`/api/projects/${this.currentProject.name}/update-domain`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ domain, enable_ssl: enableSSL })
+            });
+
+            const result = await response.json();
+
+            if (result.message) {
+                this.showMessage(result.message, 'success');
+                this.closeModal(document.getElementById('updateProjectModal'));
+                this.loadProjects();
+            } else {
+                this.showMessage(result.error || 'Failed to update domain', 'error');
+            }
+        } catch (error) {
+            this.showMessage('Error updating domain: ' + error.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async updateRepository() {
+        if (!this.currentProject) return;
+
+        const form = document.getElementById('updateRepositoryForm');
+        const formData = new FormData(form);
+        const repoUrl = formData.get('repo_url');
+
+        this.showLoading();
+
+        try {
+            const response = await fetch(`/api/projects/${this.currentProject.name}/update-repository`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ repo_url: repoUrl })
+            });
+
+            const result = await response.json();
+
+            if (result.message) {
+                this.showMessage(result.message, 'success');
+                this.closeModal(document.getElementById('updateProjectModal'));
+                this.loadProjects();
+            } else {
+                this.showMessage(result.error || 'Failed to update repository', 'error');
+            }
+        } catch (error) {
+            this.showMessage('Error updating repository: ' + error.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async updateProjectConfig() {
+        if (!this.currentProject) return;
+
+        const form = document.getElementById('updateConfigForm');
+        const formData = new FormData(form);
+        
+        const updates = {};
+        if (formData.get('custom_domain')) updates.custom_domain = formData.get('custom_domain');
+        if (formData.get('subfolder')) updates.subfolder = formData.get('subfolder');
+        updates.enable_ssl = formData.get('enable_ssl') === 'on';
+        updates.enable_redis = formData.get('enable_redis') === 'on';
+
+        this.showLoading();
+
+        try {
+            const response = await fetch(`/api/projects/${this.currentProject.name}/update-config`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(updates)
+            });
+
+            const result = await response.json();
+
+            if (result.message) {
+                this.showMessage(result.message, 'success');
+                this.closeModal(document.getElementById('updateProjectModal'));
+                this.loadProjects();
+            } else {
+                this.showMessage(result.error || 'Failed to update configuration', 'error');
+            }
+        } catch (error) {
+            this.showMessage('Error updating configuration: ' + error.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
     }
 
     // Auto-refresh projects every 30 seconds
@@ -872,6 +1146,53 @@ document.addEventListener('DOMContentLoaded', () => {
         
         .domain:hover {
             text-decoration: underline;
+        }
+
+        /* Update Project Modal Styles */
+        .update-tabs {
+            display: flex;
+            border-bottom: 1px solid #e0e0e0;
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 12px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: #666;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .tab-btn:hover {
+            color: #333;
+            background-color: #f8f9fa;
+        }
+
+        .tab-btn.active {
+            color: #007cba;
+            border-bottom-color: #007cba;
+            background-color: #f8f9fa;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .tab-content .form-group {
+            margin-bottom: 20px;
+        }
+
+        .tab-content .modal-actions {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
         }
     `;
     document.head.appendChild(style);
