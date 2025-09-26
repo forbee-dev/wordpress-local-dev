@@ -20,18 +20,22 @@ A comprehensive web-based tool to quickly spin up and manage local WordPress dev
 
 ### 🔧 **Advanced Project Management**
 - **One-Click Creation**: Complete WordPress environment in minutes
+- **Project Updates**: Modify WordPress version, domain, repository, and configuration
 - **Git Integration**: Automatic wp-content repository cloning
 - **Database Management**: File upload, import, export, and replacement
-- **SSL Certificates**: Self-signed certificates with system trust integration
+- **Trusted SSL Certificates**: Automatic mkcert CA installation for browser-trusted certificates
 - **Local Domains**: Automatic hosts file modification (local.SITENAME.test)
 - **Subfolder Support**: Handle WordPress installations in subdirectories
 
-### 💾 **Database Operations**
-- **File Upload**: Drag & drop SQL file uploads via web interface
-- **Automatic Import**: Database files imported during project creation
-- **Live Updates**: Replace databases in existing projects with backup option
+### 💾 **Advanced Database Management**
+- **Integrated Upload**: Database upload integrated into Update Project modal
+- **Smart Fallback Strategy**: Tries original file first, auto-repairs if needed
+- **Real-Time Progress**: Detailed server logs with step-by-step progress tracking
+- **Automatic Backup**: Creates database backups before import with error handling
+- **UTF-8 Error Handling**: Handles corrupted files with automatic character replacement
+- **Database Clearing**: Prevents duplicate key errors by clearing database before import
 - **Export Functionality**: One-click database exports with timestamps
-- **Backup System**: Automatic backups before database replacements
+- **File Type Support**: Handles both .sql and .sql.gz files automatically
 
 ### 🔄 **Live Docker Hub Integration**
 - **Real-Time Versions**: Fetches current WordPress versions from Docker Hub API
@@ -47,11 +51,31 @@ A comprehensive web-based tool to quickly spin up and manage local WordPress dev
 - **Shell Access**: Direct container access for debugging
 - **Cleanup Utilities**: Automated cleanup and resource management
 
+## 🔐 SSL Certificate Management
+
+### **Automatic Trusted SSL Certificates**
+
+The system now provides **automatic trusted SSL certificates** with no browser warnings:
+
+- **mkcert Integration**: Uses mkcert for locally trusted certificates
+- **Automatic CA Installation**: mkcert local CA installed automatically during project creation
+- **Browser Trusted**: Certificates are automatically trusted by all browsers
+- **No Manual Setup**: Works out of the box with no configuration required
+- **Wildcard Support**: Includes `*.domain.com` and `localhost` in certificates
+
+### **SSL Features**
+- ✅ **No Browser Warnings**: Certificates are automatically trusted
+- ✅ **Automatic Installation**: mkcert CA installed during project creation/start
+- ✅ **Multiple Domains**: Each certificate includes domain, wildcard, localhost, and 127.0.0.1
+- ✅ **Auto-Renewal**: Certificates checked and regenerated every 30 days
+- ✅ **Domain Updates**: SSL certificates automatically updated when domain changes
+
 ## Requirements
 
 - Docker & Docker Compose
 - Python 3.8+
 - Administrator/root privileges (for hosts file modification)
+- **mkcert** (automatically installed if not present)
 
 ## 🚀 Quick Start
 
@@ -91,6 +115,46 @@ A comprehensive web-based tool to quickly spin up and manage local WordPress dev
    - **WordPress Admin**: `https://local.PROJECT-NAME.test/wp-admin`
    - **phpMyAdmin**: `https://local.PROJECT-NAME.test:8443`
 
+### Updating Existing Projects
+
+#### **Project Update Modal**
+Click the "Update Project" button on any project card to access the comprehensive update interface:
+
+1. **WordPress Version Tab:**
+   - Select from live Docker Hub versions
+   - Automatic container rebuild with new version
+   - Preserves all data and configuration
+
+2. **Domain Tab:**
+   - Change project domain (e.g., `local.mysite.com`)
+   - Automatic hosts file update
+   - SSL certificate regeneration for new domain
+   - Optional SSL enable/disable
+
+3. **Repository Tab:**
+   - Update source repository URL
+   - Automatic re-cloning of new repository
+   - Preserves wp-content linking structure
+
+4. **Database Tab:**
+   - Upload new database files (.sql, .sql.gz)
+   - Automatic backup before import
+   - Real-time progress logs with detailed server feedback
+   - Smart fallback strategy (original → repaired if needed)
+   - UTF-8 error handling and file repair
+
+5. **Configuration Tab:**
+   - Custom domain settings
+   - Subfolder configuration
+   - SSL enable/disable
+   - Redis caching toggle
+
+#### **Automatic SSL Management**
+- **CA Installation**: mkcert local CA installed automatically when needed
+- **Certificate Generation**: Trusted certificates generated for all domains
+- **Domain Updates**: SSL certificates automatically updated when domain changes
+- **No Browser Warnings**: All certificates are automatically trusted by browsers
+
 ### Managing Existing Projects
 
 #### **Project Dashboard Features**
@@ -98,13 +162,23 @@ A comprehensive web-based tool to quickly spin up and manage local WordPress dev
 - **Quick Actions**: Start, stop, delete with one click
 - **URL Access**: Direct links to all project endpoints
 - **Log Viewing**: Container logs in modal windows
+- **Project Updates**: Comprehensive update modal with tabbed interface
+
+#### **Project Update Features**
+- **WordPress Version**: Change WordPress version with live Docker Hub integration
+- **Domain Management**: Update project domain with automatic SSL regeneration
+- **Repository Updates**: Change source repository with automatic re-cloning
+- **Configuration**: Modify SSL, Redis, subfolder, and custom domain settings
+- **SSL Management**: Automatic certificate regeneration and CA installation
 
 #### **Database Management**
 - **Upload New Database**: 
-  - Click "Upload Database" on any project card
-  - Drag & drop SQL files or browse to select
+  - Go to Update Project → Database tab
+  - Upload .sql or .sql.gz files with drag & drop
   - Automatic backup creation before replacement
-  - Real-time import progress with error handling
+  - Real-time progress logs with detailed server feedback
+  - Smart fallback strategy handles corrupted files
+  - UTF-8 error handling with automatic file repair
 
 - **Export Database**:
   - One-click export from project dashboard
@@ -113,10 +187,17 @@ A comprehensive web-based tool to quickly spin up and manage local WordPress dev
 
 #### **Advanced Operations**
 - **WP CLI Commands**: Full WordPress CLI access for plugins, themes, users, and database operations
-- **Git Repository Updates**: Re-clone wp-content repositories
-- **SSL Certificate Renewal**: Regenerate certificates as needed
+- **Project Updates**: Comprehensive update system for WordPress version, domain, repository, database, and configuration
+- **Database Import Features**: 
+  - Smart fallback strategy (original → repaired if needed)
+  - Automatic UTF-8 error handling and file repair
+  - Database clearing to prevent duplicate key errors
+  - Real-time progress logs with detailed server feedback
+  - Support for both .sql and .sql.gz files
+- **SSL Certificate Management**: Automatic mkcert CA installation and trusted certificate generation
 - **Container Management**: Individual service control (WordPress, MySQL, Redis, etc.)
 - **Environment Variables**: Modify project configuration via config.json
+- **Automatic SSL**: Trusted certificates generated automatically with no browser warnings
 
 ## 📁 Project Structure
 
@@ -266,8 +347,9 @@ docker-compose --profile cli run --rm wpcli transient delete --all
 
 #### **API Integration**
 
-You can also run WP CLI commands via the web API:
+You can also run WP CLI commands and project updates via the web API:
 
+**WP CLI Commands:**
 ```bash
 # Add WP CLI to a project
 curl -X POST http://localhost:5001/api/add-wpcli/your-project-name
@@ -278,6 +360,32 @@ curl -X POST http://localhost:5001/api/wp-cli/your-project-name \
   -d '{"command": "plugin list"}'
 ```
 
+**Project Update API:**
+```bash
+# Update WordPress version
+curl -X POST http://localhost:5001/api/projects/your-project/update-wordpress-version \
+  -H "Content-Type: application/json" \
+  -d '{"version": "php8.3"}'
+
+# Update domain
+curl -X POST http://localhost:5001/api/projects/your-project/update-domain \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "local.newsite.com", "enable_ssl": true}'
+
+# Update repository
+curl -X POST http://localhost:5001/api/projects/your-project/update-repository \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url": "git@github.com:user/new-repo.git"}'
+
+# Update configuration
+curl -X POST http://localhost:5001/api/projects/your-project/update-config \
+  -H "Content-Type: application/json" \
+  -d '{"enable_ssl": true, "enable_redis": true, "subfolder": "wp"}'
+
+# Regenerate SSL certificates
+curl -X POST http://localhost:5001/api/projects/your-project/regenerate-ssl
+```
+
 #### **Technical Details**
 
 - **Image**: Uses official `wordpress:cli-php8.3` Docker image
@@ -285,4 +393,46 @@ curl -X POST http://localhost:5001/api/wp-cli/your-project-name \
 - **Volumes**: Shares WordPress data and wp-content volumes
 - **Profiles**: Uses Docker Compose profiles (CLI service only runs when explicitly called)
 - **Permissions**: Runs as www-data user (33:33) for proper file permissions
-- **Working Directory**: Pre-configured to WordPress root (`/var/www/html`) 
+- **Working Directory**: Pre-configured to WordPress root (`/var/www/html`)
+
+## 🔧 Troubleshooting
+
+### SSL Certificate Issues
+
+If you encounter SSL certificate warnings:
+
+1. **Check mkcert Installation:**
+   ```bash
+   mkcert -version
+   ```
+
+2. **Install mkcert CA manually:**
+   ```bash
+   mkcert -install
+   ```
+
+3. **Regenerate SSL certificates:**
+   - Use the "Regenerate SSL" option in the project update modal
+   - Or via API: `curl -X POST http://localhost:5001/api/projects/your-project/regenerate-ssl`
+
+4. **Manual CA installation (macOS):**
+   ```bash
+   sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \
+     "/Users/$(whoami)/Library/Application Support/mkcert/rootCA.pem"
+   ```
+
+### Project Update Issues
+
+If project updates fail:
+
+1. **Check project status:** Ensure project is stopped before major updates
+2. **Verify permissions:** Ensure Docker has proper permissions
+3. **Check logs:** Use the "View Logs" option in the project dashboard
+4. **Manual update:** Use the Makefile commands in the project directory
+
+### Common Solutions
+
+- **Port conflicts:** Change ports in docker-compose.yml if 80/443 are in use
+- **Permission issues:** Run with appropriate user permissions
+- **Network issues:** Check Docker network connectivity
+- **SSL warnings:** Ensure mkcert CA is installed in system trust store 

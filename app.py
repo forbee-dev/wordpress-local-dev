@@ -478,53 +478,29 @@ def upload_database(project_name):
         
         print(f"🔄 Processing uploaded database file for project: {project_name}")
         
-        # Validate and repair the database file if needed
-        final_db_path, repair_message = validate_and_repair_database(db_file_path)
-        
-        # Prepare response message
-        messages = []
-        if repair_message:
-            messages.append(f"🔧 {repair_message}")
-            messages.append(f"📁 Using repaired file: {Path(final_db_path).name}")
-        else:
-            messages.append("✅ File validation passed - no repair needed")
-        
-        # Import the database (original or repaired version)
-        print(f"📋 Importing database from: {Path(final_db_path).name}")
+        # Import database using new fallback strategy (tries original first, then repaired)
         result = project_manager.import_database(
             project_name=project_name,
-            db_file_path=final_db_path,
+            db_file_path=str(db_file_path),
             backup_before_import=backup_before_upload
         )
         
         if result['success']:
-            messages.append("✅ Database imported successfully!")
-            
-            # Clean up: remove original file if a repaired version was created
-            if repair_message and final_db_path != str(db_file_path):
-                try:
-                    os.remove(str(db_file_path))
-                    messages.append(f"🧹 Cleaned up original file")
-                except:
-                    pass  # Don't fail if cleanup fails
-            
             return jsonify({
-                'message': ' | '.join(messages),
+                'message': result['message'],
+                'logs': result.get('logs', []),
                 'details': {
-                    'validation_passed': repair_message is None,
-                    'repair_performed': repair_message is not None,
-                    'final_file': Path(final_db_path).name,
-                    'import_successful': True
+                    'import_successful': True,
+                    'final_file': Path(str(db_file_path)).name
                 }
             })
         else:
             return jsonify({
                 'error': f"Database import failed: {result['error']}",
+                'logs': result.get('logs', []),
                 'details': {
-                    'validation_passed': repair_message is None,
-                    'repair_performed': repair_message is not None,
-                    'final_file': Path(final_db_path).name,
-                    'import_successful': False
+                    'import_successful': False,
+                    'final_file': Path(str(db_file_path)).name
                 }
             }), 400
             
@@ -653,6 +629,154 @@ def run_wp_cli_command(project_name):
                 'error': result['error'],
                 'command': result['command']
             }), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/update-wordpress-version', methods=['POST'])
+def update_wordpress_version(project_name):
+    """Update WordPress version for an existing project"""
+    try:
+        data = request.get_json()
+        if not data or 'version' not in data:
+            return jsonify({'error': 'WordPress version is required'}), 400
+        
+        new_version = data['version']
+        result = project_manager.update_wordpress_version(project_name, new_version)
+        
+        if result['success']:
+            return jsonify({
+                'message': result['message'],
+                'version': new_version
+            })
+        else:
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/update-domain', methods=['POST'])
+def update_domain(project_name):
+    """Update domain for an existing project"""
+    try:
+        data = request.get_json()
+        if not data or 'domain' not in data:
+            return jsonify({'error': 'Domain is required'}), 400
+        
+        new_domain = data['domain']
+        enable_ssl = data.get('enable_ssl', None)
+        
+        result = project_manager.update_domain(project_name, new_domain, enable_ssl)
+        
+        if result['success']:
+            return jsonify({
+                'message': result['message'],
+                'domain': new_domain
+            })
+        else:
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/update-repository', methods=['POST'])
+def update_repository(project_name):
+    """Update repository URL for an existing project"""
+    try:
+        data = request.get_json()
+        if not data or 'repo_url' not in data:
+            return jsonify({'error': 'Repository URL is required'}), 400
+        
+        new_repo_url = data['repo_url']
+        result = project_manager.update_repository(project_name, new_repo_url)
+        
+        if result['success']:
+            return jsonify({
+                'message': result['message'],
+                'repo_url': new_repo_url
+            })
+        else:
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/update-config', methods=['POST'])
+def update_project_config(project_name):
+    """Update project configuration settings"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Configuration data is required'}), 400
+        
+        # Extract allowed configuration fields
+        updates = {}
+        allowed_fields = ['enable_ssl', 'enable_redis', 'subfolder', 'custom_domain']
+        
+        for field in allowed_fields:
+            if field in data:
+                updates[field] = data[field]
+        
+        if not updates:
+            return jsonify({'error': 'No valid configuration fields provided'}), 400
+        
+        result = project_manager.update_project_config(project_name, **updates)
+        
+        if result['success']:
+            return jsonify({
+                'message': result['message'],
+                'updated_fields': result.get('updated_fields', [])
+            })
+        else:
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ssl/setup-mkcert', methods=['POST'])
+def setup_mkcert():
+    """Help user set up mkcert for trusted SSL certificates"""
+    try:
+        ssl_generator = SSLGenerator()
+        ssl_generator.setup_mkcert()
+        
+        return jsonify({
+            'message': 'mkcert setup instructions displayed',
+            'mkcert_available': ssl_generator.mkcert_available
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/regenerate-ssl', methods=['POST'])
+def regenerate_ssl(project_name):
+    """Regenerate SSL certificate for an existing project"""
+    try:
+        ssl_generator = SSLGenerator()
+        
+        # Get project config to find domain
+        project_path = project_manager.projects_dir / project_name
+        config_path = project_path / "config.json"
+        
+        if not config_path.exists():
+            return jsonify({'error': 'Project config not found'}), 404
+        
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        domain = config.get('domain', '').split('/')[0]
+        if not domain:
+            return jsonify({'error': 'Project domain not found'}), 400
+        
+        # Regenerate SSL certificate
+        success = ssl_generator.generate_ssl_cert(project_name, domain)
+        
+        if success:
+            return jsonify({
+                'message': f'SSL certificate regenerated for {domain}',
+                'mkcert_used': ssl_generator.mkcert_available
+            })
+        else:
+            return jsonify({'error': 'Failed to regenerate SSL certificate'}), 500
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
