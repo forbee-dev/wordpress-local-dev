@@ -310,40 +310,44 @@ def get_fallback_versions():
 def create_project():
     """Create a new WordPress project"""
     try:
-        # Handle file upload
+        # Get form data first to get project name
+        project_name = request.form.get('project_name')
+        if not project_name:
+            return jsonify({'error': 'Project name is required'}), 400
+        
+        # Handle file upload - save directly to project data folder
         db_file_path = None
         validation_message = None
         if 'db_file' in request.files:
             file = request.files['db_file']
             if file and file.filename:
-                # Create uploads directory if it doesn't exist
-                uploads_dir = Path('uploads')
-                uploads_dir.mkdir(exist_ok=True)
+                # Create project data directory
+                project_data_dir = Path('wordpress-projects') / project_name / 'data'
+                project_data_dir.mkdir(parents=True, exist_ok=True)
                 
-                # Save the uploaded file
+                # Save the uploaded file directly to project data folder
                 filename = secure_filename(file.filename)
-                temp_db_path = uploads_dir / filename
-                file.save(str(temp_db_path))
+                project_db_path = project_data_dir / filename
+                file.save(str(project_db_path))
                 
-                print(f"🔄 Validating uploaded database file during project creation")
+                print(f"🔄 Validating uploaded database file for project: {project_name}")
                 
-                # Validate and repair the database file if needed
-                final_db_path, repair_message = validate_and_repair_database(temp_db_path)
+                # Validate and repair the database file if needed (in-place)
+                final_db_path, repair_message = validate_and_repair_database(project_db_path)
                 db_file_path = Path(final_db_path)
                 
                 if repair_message:
                     validation_message = f"Database file repaired: {repair_message}"
                     # Clean up original if repaired version was created
-                    if final_db_path != str(temp_db_path):
+                    if final_db_path != str(project_db_path):
                         try:
-                            os.remove(str(temp_db_path))
+                            os.remove(str(project_db_path))
                         except:
                             pass
                 else:
                     validation_message = "Database file validation passed"
         
-        # Get form data
-        project_name = request.form.get('project_name')
+        # Get remaining form data
         wordpress_version = request.form.get('wordpress_version')
         repo_url = request.form.get('repo_url')
         subfolder = request.form.get('subfolder', '')
@@ -510,8 +514,13 @@ def upload_database(project_name):
 
 @app.route('/api/import-database/<project_name>', methods=['POST'])
 def import_database_legacy(project_name):
-    """Import database for a project (legacy endpoint with automatic validation and repair)"""
+    """Import database for a project (legacy endpoint - redirects to new upload pattern)"""
     try:
+        # Check if project exists
+        project_path = Path('wordpress-projects') / project_name
+        if not project_path.exists():
+            return jsonify({'error': 'Project not found'}), 404
+            
         if 'db_file' not in request.files:
             return jsonify({'error': 'No database file provided'}), 400
         
@@ -519,39 +528,25 @@ def import_database_legacy(project_name):
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
         
-        # Create uploads directory if it doesn't exist
-        uploads_dir = Path('uploads')
-        uploads_dir.mkdir(exist_ok=True)
+        # Save directly to project data directory (same as new pattern)
+        data_dir = project_path / 'data'
+        data_dir.mkdir(exist_ok=True)
         
-        # Save the uploaded file
         filename = secure_filename(file.filename)
-        temp_db_path = uploads_dir / filename
-        file.save(str(temp_db_path))
+        db_file_path = data_dir / filename
+        file.save(str(db_file_path))
         
         print(f"🔄 Processing uploaded database file for legacy import: {project_name}")
         
-        # Validate and repair the database file if needed
-        final_db_path, repair_message = validate_and_repair_database(temp_db_path)
-        
-        # Import the database (original or repaired version)
-        result = project_manager.import_database(project_name, final_db_path)
-        
-        # Clean up uploaded files
-        try:
-            if final_db_path != str(temp_db_path):
-                # Remove both original and repaired files for legacy endpoint
-                os.remove(str(temp_db_path))
-                os.remove(final_db_path)
-            else:
-                # Remove original file only
-                os.remove(str(temp_db_path))
-        except:
-            pass
+        # Import database using new pattern (no backup by default for legacy compatibility)
+        result = project_manager.import_database(
+            project_name=project_name,
+            db_file_path=str(db_file_path),
+            backup_before_import=False
+        )
         
         if result['success']:
             response_data = {'message': result['message']}
-            if repair_message:
-                response_data['validation_message'] = f"File was repaired: {repair_message}"
             return jsonify(response_data)
         else:
             return jsonify({'error': result['error']}), 400
@@ -784,7 +779,6 @@ def regenerate_ssl(project_name):
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs('wordpress-projects', exist_ok=True)
-    os.makedirs('uploads', exist_ok=True)
     os.makedirs('utils', exist_ok=True)
     os.makedirs('templates', exist_ok=True)
     os.makedirs('static/css', exist_ok=True)

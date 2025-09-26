@@ -106,9 +106,11 @@ class ProjectManager:
             # Add to hosts file
             self.hosts_manager.add_host(domain.split('/')[0])
             
-            # Copy database file to project data folder if provided
+            # Database file is already saved to project data folder during upload
             if db_file_path and Path(db_file_path).exists():
-                self._copy_database_file(db_file_path, project_path, config)
+                # Update config with project-relative path for reference
+                db_filename = Path(db_file_path).name
+                config['db_file'] = f"data/{db_filename}"
             
             # Save project config
             self.config_manager.create_project_config(project_path, config)
@@ -412,24 +414,6 @@ class ProjectManager:
             print(f"   ❌ Error updating repository: {str(e)}")
             return {'success': False, 'error': str(e)}
     
-    def _copy_database_file(self, db_file_path, project_path, config):
-        """Copy database file to project data folder"""
-        try:
-            project_data_dir = project_path / "data"
-            project_data_dir.mkdir(exist_ok=True)
-            
-            db_filename = Path(db_file_path).name
-            project_db_path = project_data_dir / db_filename
-            
-            # Copy database file to project data folder
-            shutil.copy2(db_file_path, project_db_path)
-            print(f"   📋 Database file copied to: data/{db_filename}")
-            
-            # Update config with project-relative path
-            config['db_file'] = f"data/{db_filename}"
-            
-        except Exception as e:
-            print(f"   ⚠️  Warning: Could not copy database file: {str(e)}")
     
     def _start_containers_with_setup(self, project_path, project_name, db_file_path):
         """Start containers and perform initial setup"""
