@@ -392,7 +392,7 @@ class WordPressDevApp {
     async showDebugLogs(projectName) {
         if (!projectName) return;
 
-        this.currentProject = projectName;
+        this.currentProject = { name: projectName };
         this.showModal('debugLogsModal');
         this.loadDebugLogs();
 
@@ -506,16 +506,19 @@ class WordPressDevApp {
         const lines = content.split('\n');
         
         const coloredLines = lines.map(line => {
+            // Escape HTML entities to prevent issues with existing HTML tags in logs
+            const escapedLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
             if (line.includes('[ERROR]') || line.includes('Fatal error') || line.includes('PHP Fatal error')) {
-                return `<span style="color: #e74c3c; font-weight: bold;">${line}</span>`;
+                return `<span style="color: #e74c3c; font-weight: bold;">${escapedLine}</span>`;
             } else if (line.includes('[WARNING]') || line.includes('PHP Warning') || line.includes('Warning:')) {
-                return `<span style="color: #f39c12; font-weight: bold;">${line}</span>`;
+                return `<span style="color: #f39c12; font-weight: bold;">${escapedLine}</span>`;
             } else if (line.includes('[NOTICE]') || line.includes('PHP Notice') || line.includes('Notice:')) {
-                return `<span style="color: #fff;">${line}</span>`;
+                return `<span style="color: #fff;">${escapedLine}</span>`;
             } else if (line.includes('[DEBUG]') || line.includes('DEBUG')) {
-                return `<span style="color: #95a5a6;">${line}</span>`;
+                return `<span style="color: #95a5a6;">${escapedLine}</span>`;
             } else {
-                return line;
+                return escapedLine;
             }
         });
         
