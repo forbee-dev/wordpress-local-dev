@@ -57,9 +57,34 @@ class DockerManager:
             )
             
             if result.returncode == 0:
-                return {'success': True, 'message': 'Project started successfully'}
+                # Verify containers actually started
+                status = self.get_project_status(project_path)
+                if status.get('status') == 'running':
+                    return {'success': True, 'message': 'Project started successfully'}
+                elif status.get('status') == 'partial':
+                    # Some containers failed to start
+                    error_msg = 'Some containers failed to start. '
+                    # Try to get more details from logs
+                    logs = self.get_project_logs(project_path, tail_lines=20)
+                    if logs:
+                        error_msg += f'Recent logs: {logs[-500:]}'  # Last 500 chars
+                    return {'success': False, 'error': error_msg}
+                else:
+                    # Containers didn't start, get error details
+                    error_msg = 'Containers failed to start. '
+                    if result.stderr:
+                        error_msg += result.stderr
+                    elif result.stdout:
+                        error_msg += result.stdout
+                    # Also check logs
+                    logs = self.get_project_logs(project_path, tail_lines=20)
+                    if logs:
+                        error_msg += f'\nRecent logs: {logs[-500:]}'
+                    return {'success': False, 'error': error_msg}
             else:
-                return {'success': False, 'error': result.stderr}
+                # docker-compose command failed
+                error_output = result.stderr if result.stderr else result.stdout
+                return {'success': False, 'error': error_output}
                 
         except Exception as e:
             return {'success': False, 'error': str(e)}
@@ -140,6 +165,21 @@ class DockerManager:
         # Create custom PHP configuration for file uploads
         self._create_php_config(project_path)
         
+        # Normalize WordPress version for FPM image
+        # Handle versions that already include -fpm, or are "latest", or are just version numbers
+        if wordpress_version.endswith('-fpm'):
+            # Version already includes -fpm, use as-is
+            wp_image_tag = wordpress_version
+        elif wordpress_version == 'latest':
+            # Latest should use fpm tag (which is latest FPM)
+            wp_image_tag = 'fpm'
+        elif wordpress_version.startswith('php'):
+            # PHP version like php8.3, add -fpm
+            wp_image_tag = f"{wordpress_version}-fpm"
+        else:
+            # Version number like 6.4, add -fpm
+            wp_image_tag = f"{wordpress_version}-fpm"
+        
         # Build nginx volumes list
         nginx_volumes = [
             "./nginx.conf:/etc/nginx/conf.d/default.conf",
@@ -175,11 +215,9 @@ class DockerManager:
             volumes_list.append("redis_data:")
         volumes_str = "\n".join([f"  {vol}" for vol in volumes_list])
         
-        compose_content = f"""version: '3.8'
-
-services:
+        compose_content = f"""services:
   wordpress:
-    image: wordpress:{wordpress_version}-fpm
+    image: wordpress:{wp_image_tag}
     container_name: ${{PROJECT_NAME}}_wordpress
     restart: unless-stopped
     environment:
