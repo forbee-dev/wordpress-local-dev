@@ -62,20 +62,79 @@ class WordPressManager:
             return {'success': False, 'error': str(e)}
     
     def fix_wp_config_debug(self, project_path):
-        """Fix wp-config.php to properly read debug environment variables"""
+        """Fix wp-config.php to set WordPress debug constants to the correct values"""
         try:
             # Create a temporary PHP script file
             fix_script_path = project_path / "fix_debug.php"
             fix_script_content = '''<?php
-$content = file_get_contents('/var/www/html/wp-config.php');
+$config_path = '/var/www/html/wp-config.php';
+$content = file_get_contents($config_path);
 
-$old = "define( 'WP_DEBUG', !!getenv_docker('WORDPRESS_DEBUG', '') );";
-$new = "define( 'WP_DEBUG', !!getenv_docker('WORDPRESS_DEBUG', '') );
-define( 'WP_DEBUG_LOG', !!getenv_docker('WORDPRESS_DEBUG_LOG', '') );
-define( 'WP_DEBUG_DISPLAY', !!getenv_docker('WORDPRESS_DEBUG_DISPLAY', '') );";
+// Remove any existing WP_DEBUG, WP_DEBUG_LOG, or WP_DEBUG_DISPLAY lines
+$lines = explode("\\n", $content);
+$new_lines = [];
 
-$content = str_replace($old, $new, $content);
-file_put_contents('/var/www/html/wp-config.php', $content);
+foreach ($lines as $i => $line) {
+    $trimmed = trim($line);
+    // Skip lines that define WP_DEBUG constants (handle both single and double quotes)
+    if (preg_match("/define\\s*\\(\\s*['\\"](WP_DEBUG|WP_DEBUG_LOG|WP_DEBUG_DISPLAY)['\\"]/i", $trimmed)) {
+        continue;
+    }
+    $new_lines[] = $line;
+}
+
+$content = implode("\\n", $new_lines);
+
+// Find the position to insert the debug constants
+// Look for the comment about debugging mode first
+$insert_position = false;
+$comment_marker = "For developers: WordPress debugging mode";
+$comment_pos = strpos($content, $comment_marker);
+
+if ($comment_pos !== false) {
+    // Find the end of the comment block (after the closing */)
+    $comment_end = strpos($content, "*/", $comment_pos);
+    if ($comment_end !== false) {
+        // Find the next newline after the comment
+        $insert_position = strpos($content, "\\n", $comment_end);
+        if ($insert_position !== false) {
+            $insert_position += 1; // Position after the newline
+        }
+    }
+}
+
+// If not found, look for "stop editing" comment
+if ($insert_position === false) {
+    $stop_editing = strpos($content, "stop editing");
+    if ($stop_editing !== false) {
+        // Find the newline before "stop editing"
+        $insert_position = strrpos(substr($content, 0, $stop_editing), "\\n");
+        if ($insert_position !== false) {
+            $insert_position += 1; // Position after the newline
+        }
+    }
+}
+
+// Default: insert before the last closing PHP tag or at end of file
+if ($insert_position === false) {
+    $php_close = strrpos($content, "?>");
+    if ($php_close !== false) {
+        $insert_position = $php_close;
+    } else {
+        $insert_position = strlen($content);
+    }
+}
+
+// Insert the debug constants
+$debug_constants = "\\n// Enable WP_DEBUG mode\\n";
+$debug_constants .= "define( 'WP_DEBUG', true );\\n";
+$debug_constants .= "define( 'WP_DEBUG_LOG', true );\\n";
+$debug_constants .= "define( 'WP_DEBUG_DISPLAY', false );\\n";
+
+$content = substr_replace($content, $debug_constants, $insert_position, 0);
+
+// Write the updated content
+file_put_contents($config_path, $content);
 echo "wp-config.php updated successfully\\n";
 ?>'''
             
@@ -85,6 +144,7 @@ echo "wp-config.php updated successfully\\n";
             
             # Copy the script to wp-content directory
             wp_content_script_path = project_path / "wp-content" / "fix_debug.php"
+            wp_content_script_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(fix_script_path, wp_content_script_path)
             
             # Run the fix script in the WordPress container

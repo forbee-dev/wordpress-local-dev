@@ -167,7 +167,7 @@ class ProjectManager:
                 # Give containers a moment to fully start
                 time.sleep(5)
                 
-                # Fix wp-config.php to properly read debug environment variables
+                # Configure WordPress debug settings in wp-config.php
                 print(f"   🔧 Configuring WordPress debug settings...")
                 self.wordpress_manager.fix_wp_config_debug(project_path)
                 
@@ -432,7 +432,7 @@ class ProjectManager:
                 # Give containers a moment to fully start
                 time.sleep(5)
                 
-                # Fix wp-config.php to properly read debug environment variables
+                # Configure WordPress debug settings in wp-config.php
                 print(f"   🔧 Configuring WordPress debug settings...")
                 self.wordpress_manager.fix_wp_config_debug(project_path)
                 
