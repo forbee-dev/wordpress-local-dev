@@ -47,8 +47,17 @@ class ProjectManager:
             # Create project directory structure
             project_path.mkdir()
             (project_path / "wp-content").mkdir()
-            (project_path / "data").mkdir()
+            data_dir = project_path / "data"
+            data_dir.mkdir()
             (project_path / "ssl").mkdir()
+            
+            # If DB was uploaded to temp dir, move it into project data/ (API never creates project dir)
+            if db_file_path and Path(db_file_path).exists():
+                src = Path(db_file_path)
+                dst = data_dir / src.name
+                if dst.resolve() != src.resolve():
+                    shutil.move(str(src), str(dst))
+                    db_file_path = str(dst)
             
             # Generate domain
             domain = custom_domain if custom_domain else f"local.{project_name}.test"
@@ -228,8 +237,32 @@ class ProjectManager:
         project_path = self.projects_dir / project_name
         return self.wordpress_manager.clear_debug_logs(project_path)
     
-    def import_database(self, project_name, db_file_path, backup_before_import=True):
-        """Import database file for a project"""
+    def fix_database_connection(self, project_name):
+        """Fix database connection issues for a project"""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+        return self.wordpress_manager.fix_database_connection(project_path)
+    
+    def fix_wordpress_install_detection(self, project_name):
+        """Fix WordPress redirecting to install.php when database is already imported"""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+        return self.wordpress_manager.fix_wordpress_install_detection(project_path)
+
+    def get_wp_config(self, project_name):
+        """Get wp-config.php content from the WordPress container"""
+        project_path = self.projects_dir / project_name
+        return self.wordpress_manager.get_wp_config(project_path)
+
+    def update_wp_config(self, project_name, content):
+        """Update wp-config.php in the WordPress container"""
+        project_path = self.projects_dir / project_name
+        return self.wordpress_manager.update_wp_config(project_path, content)
+    
+    def import_database(self, project_name, db_file_path, backup_before_import=True, url_search=None, url_replace=None):
+        """Import database file for a project. Optional url_search/url_replace to rewrite URLs in the dump (e.g. production → local)."""
         project_path = self.projects_dir / project_name
         
         # Check if containers are running
@@ -237,7 +270,20 @@ class ProjectManager:
         if status.get('status') != 'running':
             return {'success': False, 'error': 'Project must be running to import database. Please start the project first.', 'logs': []}
         
-        return self.database_manager.import_database(project_path, project_name, db_file_path, backup_before_import)
+        # Import the database
+        result = self.database_manager.import_database(
+            project_path, project_name, db_file_path, backup_before_import,
+            url_search=url_search, url_replace=url_replace
+        )
+        
+        # If import was successful, ensure WordPress recognizes the imported database
+        if result.get('success'):
+            print(f"   🔄 Ensuring WordPress recognizes imported database...")
+            wp_result = self.wordpress_manager.ensure_wordpress_recognizes_database(project_path)
+            if wp_result.get('success'):
+                result['message'] = result.get('message', 'Database imported successfully') + '. ' + wp_result.get('message', '')
+        
+        return result
     
     def run_wp_cli_command(self, project_name, command):
         """Run a WP CLI command on a project"""
@@ -413,6 +459,131 @@ class ProjectManager:
         except Exception as e:
             print(f"   ❌ Error updating repository: {str(e)}")
             return {'success': False, 'error': str(e)}
+    
+    def link_existing_repository(self, project_name):
+        """Link an existing manually cloned repository to wp-content"""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+        
+        try:
+            config = self.config_manager.read_project_config(project_path)
+            if not config:
+                return {'success': False, 'error': 'Project config not found'}
+            
+            print(f"🔗 Linking existing repository for project: {project_name}")
+            
+            # Stop containers to avoid conflicts
+            print(f"   🛑 Stopping containers...")
+            self.docker_manager.stop_project(project_path)
+            
+            # Link repository
+            result = self.repository_manager.link_existing_repository(project_path)
+            
+            if not result['success']:
+                return result
+            
+            # Update config with repository structure info
+            repo_structure = result.get('repository_structure')
+            if repo_structure:
+                updates = {
+                    'repository_structure': {
+                        'type': repo_structure['type'],
+                        'has_wp_content': repo_structure['has_wp_content'],
+                        'has_composer': repo_structure['has_composer'],
+                        'has_package_json': repo_structure['has_package_json'],
+                        'is_theme': repo_structure['is_theme'],
+                        'is_plugin': repo_structure['is_plugin'],
+                        'wp_content_path': str(repo_structure['wp_content_path']) if repo_structure['wp_content_path'] else None
+                    }
+                }
+                # Try to get repo URL from git if available
+                repo_info = self.repository_manager.get_repository_info(project_path)
+                if repo_info.get('has_repository') and repo_info.get('remote_url') != 'Unknown':
+                    updates['repo_url'] = repo_info['remote_url']
+                
+                self.config_manager.update_project_config(project_path, updates)
+            
+            # Start containers
+            print(f"   🚀 Starting containers with linked repository...")
+            start_result = self.docker_manager.start_project(project_path)
+            
+            if start_result['success']:
+                print(f"   ✅ Repository linked successfully")
+                return {'success': True, 'message': result['message']}
+            else:
+                return {'success': False, 'error': f'Failed to start containers: {start_result["error"]}'}
+                
+        except Exception as e:
+            print(f"   ❌ Error linking repository: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def update_project_with_database(self, project_name, db_file_path, backup_before_import=True):
+        """Add an initial database to a project that was created without one"""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found', 'logs': []}
+        
+        try:
+            config = self.config_manager.read_project_config(project_path)
+            if not config:
+                return {'success': False, 'error': 'Project config not found', 'logs': []}
+            
+            # Check if project already has a database file in config
+            existing_db = config.get('db_file')
+            if existing_db and Path(project_path / existing_db).exists():
+                # Project already has a database, use regular import
+                print(f"📋 Project already has a database, importing as replacement...")
+                return self.import_database(project_name, db_file_path, backup_before_import)
+            
+            # Ensure project is running
+            status = self.docker_manager.get_project_status(project_path)
+            if status.get('status') != 'running':
+                print(f"   🚀 Starting project to import initial database...")
+                start_result = self.docker_manager.start_project(project_path)
+                if not start_result.get('success'):
+                    return {'success': False, 'error': f'Failed to start project: {start_result.get("error")}', 'logs': []}
+                # Wait a moment for containers to be ready
+                import time
+                time.sleep(5)
+            
+            # Save database file to project data folder if it's not already there
+            db_file_path_obj = Path(db_file_path)
+            if not db_file_path_obj.is_absolute() or str(db_file_path_obj.parent) != str(project_path / 'data'):
+                # Copy file to project data folder
+                data_dir = project_path / 'data'
+                data_dir.mkdir(exist_ok=True)
+                target_path = data_dir / db_file_path_obj.name
+                if db_file_path_obj.exists():
+                    import shutil
+                    shutil.copy2(db_file_path_obj, target_path)
+                    db_file_path = str(target_path)
+                else:
+                    return {'success': False, 'error': f'Database file not found: {db_file_path}', 'logs': []}
+            
+            # Import the database
+            print(f"📋 Importing initial database for project: {project_name}")
+            result = self.database_manager.import_database(project_path, project_name, db_file_path, backup_before_import)
+            
+            # If import was successful, update config and ensure WordPress recognizes it
+            if result.get('success'):
+                # Update project config to track the database file
+                db_filename = Path(db_file_path).name
+                self.config_manager.update_project_config(project_path, {
+                    'db_file': f"data/{db_filename}"
+                })
+                
+                # Ensure WordPress recognizes the imported database
+                print(f"   🔄 Ensuring WordPress recognizes imported database...")
+                wp_result = self.wordpress_manager.ensure_wordpress_recognizes_database(project_path)
+                if wp_result.get('success'):
+                    result['message'] = result.get('message', 'Initial database imported successfully') + '. ' + wp_result.get('message', '')
+            
+            return result
+                
+        except Exception as e:
+            print(f"   ❌ Error updating project with database: {str(e)}")
+            return {'success': False, 'error': str(e), 'logs': []}
     
     
     def _start_containers_with_setup(self, project_path, project_name, db_file_path):

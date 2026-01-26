@@ -143,6 +143,27 @@ class DockerManager:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
+    def restart_container(self, project_path, container_name):
+        """Restart a specific container in a project"""
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+        
+        try:
+            result = subprocess.run(
+                ['docker-compose', 'restart', container_name],
+                cwd=project_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if result.returncode == 0:
+                return {'success': True, 'message': f'Container {container_name} restarted successfully'}
+            else:
+                return {'success': False, 'error': f'Failed to restart container: {result.stderr}'}
+                
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
     def get_project_logs(self, project_path, tail_lines=100):
         """Get logs for Docker containers"""
         if not project_path.exists():
@@ -369,6 +390,36 @@ max_input_time = 300
         with open(project_path / "php-uploads.ini", 'w') as f:
             f.write(php_config)
     
+    def get_container_id(self, project_path, service_name):
+        """Get the container ID for a docker-compose service. Returns None if not found."""
+        try:
+            result = subprocess.run(
+                ['docker-compose', 'ps', '-q', service_name],
+                cwd=project_path,
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0 or not result.stdout:
+                return None
+            return result.stdout.strip().split('\n')[0]
+        except Exception:
+            return None
+
+    def copy_file_to_container(self, container_id, host_path, container_path):
+        """Copy a file from host to container. host_path and container_path must be absolute."""
+        try:
+            result = subprocess.run(
+                ['docker', 'cp', str(Path(host_path).resolve()), f'{container_id}:{container_path}'],
+                capture_output=True,
+                text=True
+            )
+            return {
+                'success': result.returncode == 0,
+                'error': result.stderr if result.returncode != 0 else None
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
     def exec_command_in_container(self, project_path, container_name, command):
         """Execute a command in a specific container"""
         try:
@@ -395,6 +446,8 @@ max_input_time = 300
     def run_wp_cli_command(self, project_path, command):
         """Run a WP CLI command using the wpcli container"""
         try:
+            import shlex
+            
             # Check if WP CLI service exists in docker-compose
             docker_compose_path = project_path / "docker-compose.yml"
             if not docker_compose_path.exists():
@@ -406,11 +459,11 @@ max_input_time = 300
             if "wpcli:" not in compose_content:
                 return {'success': False, 'error': 'WP CLI service not configured. Please add WP CLI to this project first.'}
             
-            # Run the WP CLI command
+            # Run the WP CLI command - use shlex.split to properly handle quoted arguments
             full_command = f"docker-compose --profile cli run --rm wpcli {command}"
             
             result = subprocess.run(
-                full_command.split(),
+                shlex.split(full_command),
                 cwd=project_path,
                 capture_output=True,
                 text=True
