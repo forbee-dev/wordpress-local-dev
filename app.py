@@ -5,6 +5,7 @@ import subprocess
 import platform
 import gzip
 import re
+import tempfile
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from pathlib import Path
@@ -309,40 +310,33 @@ def get_fallback_versions():
 @app.route('/api/create-project', methods=['POST'])
 def create_project():
     """Create a new WordPress project"""
+    tmpdir = None
     try:
         # Get form data first to get project name
         project_name = request.form.get('project_name')
         if not project_name:
             return jsonify({'error': 'Project name is required'}), 400
         
-        # Handle file upload - save directly to project data folder
+        # Handle file upload - save to temp dir (never create project folder before create_project)
         db_file_path = None
         validation_message = None
         if 'db_file' in request.files:
             file = request.files['db_file']
             if file and file.filename:
-                # Create project data directory
-                project_data_dir = Path('wordpress-projects') / project_name / 'data'
-                project_data_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Save the uploaded file directly to project data folder
-                filename = secure_filename(file.filename)
-                project_db_path = project_data_dir / filename
-                file.save(str(project_db_path))
+                tmpdir = tempfile.mkdtemp(prefix='wp-create-db-')
+                upload_path = Path(tmpdir) / secure_filename(file.filename)
+                file.save(str(upload_path))
                 
                 print(f"🔄 Validating uploaded database file for project: {project_name}")
-                
-                # Validate and repair the database file if needed (in-place)
-                final_db_path, repair_message = validate_and_repair_database(project_db_path)
+                final_db_path, repair_message = validate_and_repair_database(upload_path)
                 db_file_path = Path(final_db_path)
                 
                 if repair_message:
                     validation_message = f"Database file repaired: {repair_message}"
-                    # Clean up original if repaired version was created
-                    if final_db_path != str(project_db_path):
+                    if final_db_path != str(upload_path) and Path(upload_path).exists():
                         try:
-                            os.remove(str(project_db_path))
-                        except:
+                            os.remove(str(upload_path))
+                        except Exception:
                             pass
                 else:
                     validation_message = "Database file validation passed"
@@ -359,7 +353,7 @@ def create_project():
         if not project_name or not wordpress_version:
             return jsonify({'error': 'Project name and WordPress version are required'}), 400
         
-        # Create the project
+        # Create the project (moves DB from temp to project data/ if provided)
         result = project_manager.create_project(
             project_name=project_name,
             wordpress_version=wordpress_version,
@@ -384,6 +378,12 @@ def create_project():
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if tmpdir and Path(tmpdir).exists():
+            try:
+                shutil.rmtree(tmpdir)
+            except Exception:
+                pass
 
 @app.route('/api/projects')
 def list_projects():
@@ -452,6 +452,51 @@ def clear_debug_logs(project_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/projects/<project_name>/fix-database-connection', methods=['POST'])
+def fix_database_connection(project_name):
+    """Fix database connection issues for a project"""
+    try:
+        result = project_manager.fix_database_connection(project_name)
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify({'error': result['error']}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/fix-install-detection', methods=['POST'])
+def fix_install_detection(project_name):
+    """Fix WordPress redirecting to install.php when database is already imported"""
+    try:
+        result = project_manager.fix_wordpress_install_detection(project_name)
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify({'error': result['error']}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/wp-config')
+def get_wp_config(project_name):
+    """Get wp-config.php content from the WordPress container"""
+    try:
+        result = project_manager.get_wp_config(project_name)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/wp-config', methods=['POST'])
+def update_wp_config(project_name):
+    """Update wp-config.php in the WordPress container"""
+    try:
+        data = request.get_json()
+        if not data or 'content' not in data:
+            return jsonify({'success': False, 'error': 'Missing "content" in request body'}), 400
+        result = project_manager.update_wp_config(project_name, data['content'])
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/projects/<project_name>/upload-db', methods=['POST'])
 def upload_database(project_name):
     """Upload and import database file for existing project with automatic validation and repair"""
@@ -471,6 +516,8 @@ def upload_database(project_name):
         
         # Get form options
         backup_before_upload = request.form.get('backup_before_upload') == 'on'
+        url_search = (request.form.get('url_search') or '').strip() or None
+        url_replace = (request.form.get('url_replace') or '').strip() or None
         
         # Save the uploaded file to project's data directory
         data_dir = project_path / 'data'
@@ -486,7 +533,9 @@ def upload_database(project_name):
         result = project_manager.import_database(
             project_name=project_name,
             db_file_path=str(db_file_path),
-            backup_before_import=backup_before_upload
+            backup_before_import=backup_before_upload,
+            url_search=url_search,
+            url_replace=url_replace
         )
         
         if result['success']:
@@ -696,6 +745,22 @@ def update_repository(project_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/projects/<project_name>/link-repository', methods=['POST'])
+def link_repository(project_name):
+    """Link an existing manually cloned repository to wp-content"""
+    try:
+        result = project_manager.link_existing_repository(project_name)
+        
+        if result['success']:
+            return jsonify({
+                'message': result['message']
+            })
+        else:
+            return jsonify({'error': result['error']}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/projects/<project_name>/update-config', methods=['POST'])
 def update_project_config(project_name):
     """Update project configuration settings"""
@@ -726,6 +791,66 @@ def update_project_config(project_name):
             return jsonify({'error': result['error']}), 400
             
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/update-database', methods=['POST'])
+def update_project_database(project_name):
+    """Add an initial database to a project that was created without one, or replace existing database"""
+    try:
+        # Check if project exists
+        project_path = Path('wordpress-projects') / project_name
+        if not project_path.exists():
+            return jsonify({'error': 'Project not found'}), 404
+        
+        # Handle file upload
+        if 'db_file' not in request.files:
+            return jsonify({'error': 'No database file provided'}), 400
+        
+        file = request.files['db_file']
+        if not file or not file.filename:
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Get form options
+        backup_before_upload = request.form.get('backup_before_upload') == 'on'
+        
+        # Save the uploaded file to project's data directory
+        data_dir = project_path / 'data'
+        data_dir.mkdir(exist_ok=True)
+        
+        filename = secure_filename(file.filename)
+        db_file_path = data_dir / filename
+        file.save(str(db_file_path))
+        
+        print(f"🔄 Processing database file for project update: {project_name}")
+        
+        # Use the update_project_with_database method which handles both initial and replacement cases
+        result = project_manager.update_project_with_database(
+            project_name=project_name,
+            db_file_path=str(db_file_path),
+            backup_before_import=backup_before_upload
+        )
+        
+        if result['success']:
+            return jsonify({
+                'message': result['message'],
+                'logs': result.get('logs', []),
+                'details': {
+                    'import_successful': True,
+                    'final_file': Path(str(db_file_path)).name
+                }
+            })
+        else:
+            return jsonify({
+                'error': f"Database import failed: {result['error']}",
+                'logs': result.get('logs', []),
+                'details': {
+                    'import_successful': False,
+                    'final_file': Path(str(db_file_path)).name
+                }
+            }), 400
+            
+    except Exception as e:
+        print(f"❌ Error in update_project_database: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/ssl/setup-mkcert', methods=['POST'])

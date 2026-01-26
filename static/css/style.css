@@ -514,6 +514,23 @@ section h2 i {
     word-wrap: break-word;
 }
 
+.wp-config-editor {
+    width: 100%;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    padding: 12px;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    resize: vertical;
+    background: #f8f9fa;
+}
+.wp-config-editor:focus {
+    outline: none;
+    border-color: #007cba;
+    background: #fff;
+}
+
 /* Debug Logs Styles */
 .logs-header-actions {
     display: flex;

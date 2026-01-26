@@ -116,7 +116,40 @@ class DatabaseManager:
             except Exception as final_e:
                 raise Exception(f"Failed to read database file with all fallback methods. Last error: {str(final_e)}")
 
-    def import_database(self, project_path, project_name, db_file_path, backup_before_import=True):
+    def _apply_url_replace(self, content, url_search, url_replace, logger):
+        """
+        Optionally replace URL strings in database content (e.g. production → local).
+        Uses literal string replace (all occurrences). No regex.
+        """
+        if not url_search or not url_replace:
+            return content
+        count = content.count(url_search)
+        if count == 0:
+            if logger:
+                logger.log(f"   🔍 URL replace: '{url_search}' → '{url_replace}' (0 occurrences, no changes)")
+            return content
+        result = content.replace(url_search, url_replace)
+        if logger:
+            logger.log(f"   🔄 URL replace: '{url_search}' → '{url_replace}' ({count:,} occurrence(s) replaced)")
+        return result
+
+    def _wrap_sql_for_import(self, content, logger=None):
+        """
+        Wrap SQL dump with session settings and use INSERT IGNORE to avoid
+        duplicate-key errors during import (common with WordPress plugin tables
+        e.g. 404 detectors). unique_checks=0 does not reliably suppress 1062.
+        """
+        # INSERT IGNORE skips rows that violate unique constraints (last one wins per key)
+        content = re.sub(r'\bINSERT\s+INTO\s+', 'INSERT IGNORE INTO ', content, flags=re.IGNORECASE)
+        preamble = (
+            "SET SESSION foreign_key_checks = 0;\n\n"
+        )
+        epilogue = (
+            "\n\nSET SESSION foreign_key_checks = 1;\n"
+        )
+        return preamble + content + epilogue
+
+    def import_database(self, project_path, project_name, db_file_path, backup_before_import=True, url_search=None, url_replace=None):
         """Import database file with fallback strategy: try original first, then repaired version"""
         if not project_path.exists():
             return {'success': False, 'error': 'Project not found', 'logs': []}
@@ -156,7 +189,10 @@ class DatabaseManager:
             self._clear_database(project_path, db_name, db_user, db_password, logger)
             
             # Implement fallback strategy: try original first, then repaired
-            result = self._import_database_with_fallback(project_path, db_file_path, db_name, db_user, db_password, logger)
+            result = self._import_database_with_fallback(
+                project_path, db_file_path, db_name, db_user, db_password, logger,
+                url_search=url_search, url_replace=url_replace
+            )
             
             # Add captured logs to result
             result['logs'] = logger.get_logs()
@@ -173,31 +209,34 @@ class DatabaseManager:
             backup_path = project_path / 'data' / backup_filename
             
             logger.log(f"🔄 Creating database backup...")
-            # Export current database with error handling for corrupted data
+            # Export current database (capture bytes; decode with replace to handle invalid UTF-8)
             backup_result = subprocess.run([
                 'docker-compose', 'exec', '-T', 'mysql',
                 'mysqldump', f'-u{db_user}', f'-p{db_password}', 
                 '--single-transaction', '--routines', '--triggers', 
                 '--default-character-set=utf8mb4', db_name
-            ], cwd=project_path, capture_output=True, text=True)
+            ], cwd=project_path, capture_output=True)
             
             if backup_result.returncode == 0:
+                out = backup_result.stdout.decode('utf-8', errors='replace')
                 with open(backup_path, 'w', encoding='utf-8', errors='replace') as f:
-                    f.write(backup_result.stdout)
+                    f.write(out)
                 logger.log(f"✅ Database backed up to: {backup_path}")
             else:
-                logger.log(f"⚠️  Backup failed: {backup_result.stderr}")
+                err = backup_result.stderr.decode('utf-8', errors='replace')
+                logger.log(f"⚠️  Backup failed: {err}")
                 # Try alternative backup method for corrupted databases
                 logger.log(f"🔄 Attempting alternative backup method...")
                 backup_result = subprocess.run([
                     'docker-compose', 'exec', '-T', 'mysql',
                     'mysqldump', f'-u{db_user}', f'-p{db_password}', 
                     '--skip-extended-insert', '--skip-lock-tables', db_name
-                ], cwd=project_path, capture_output=True, text=True)
+                ], cwd=project_path, capture_output=True)
                 
                 if backup_result.returncode == 0:
+                    out = backup_result.stdout.decode('utf-8', errors='replace')
                     with open(backup_path, 'w', encoding='utf-8', errors='replace') as f:
-                        f.write(backup_result.stdout)
+                        f.write(out)
                     logger.log(f"✅ Alternative backup successful: {backup_path}")
                 else:
                     logger.log(f"❌ Both backup methods failed, skipping backup")
@@ -224,7 +263,7 @@ class DatabaseManager:
         except Exception as e:
             logger.log(f"⚠️  Failed to clear database: {e}")
     
-    def _import_database_with_fallback(self, project_path, db_file_path, db_name, db_user, db_password, logger):
+    def _import_database_with_fallback(self, project_path, db_file_path, db_name, db_user, db_password, logger, url_search=None, url_replace=None):
         """Try importing database with fallback strategy"""
         db_file_path = Path(db_file_path)
         
@@ -270,7 +309,9 @@ class DatabaseManager:
             try:
                 # Read database content (handles both plain and gzipped files)
                 db_content = self._read_database_file(file_to_try, logger)
-                
+                db_content = self._apply_url_replace(db_content, url_search, url_replace, logger)
+                db_content = self._wrap_sql_for_import(db_content, logger)
+
                 # Import database
                 import_result = subprocess.run([
                     'docker-compose', 'exec', '-T', 'mysql',
@@ -304,7 +345,10 @@ class DatabaseManager:
         
         # If original failed and no repaired file was found, try to create one
         if original_failed and len(files_to_try) == 1:
-            return self._create_and_import_repaired_file(project_path, db_file_path, db_name, db_user, db_password, logger)
+            return self._create_and_import_repaired_file(
+                project_path, db_file_path, db_name, db_user, db_password, logger,
+                url_search=url_search, url_replace=url_replace
+            )
         
         # If all attempts failed
         attempt_count = len(files_to_try) + (1 if original_failed and len(files_to_try) == 1 else 0)
@@ -313,7 +357,7 @@ class DatabaseManager:
         else:
             return {'success': False, 'error': last_error or 'Database import failed'}
     
-    def _create_and_import_repaired_file(self, project_path, db_file_path, db_name, db_user, db_password, logger):
+    def _create_and_import_repaired_file(self, project_path, db_file_path, db_name, db_user, db_password, logger, url_search=None, url_replace=None):
         """Create a repaired version of the database file and try importing it"""
         logger.log(f"🔧 Original file failed, attempting to create and try repaired version...")
         
@@ -353,8 +397,11 @@ class DatabaseManager:
             removed_chars = original_length - final_length
             
             logger.log(f"   ✂️  Removed {removed_chars:,} problematic characters")
+
+            cleaned_content = self._apply_url_replace(cleaned_content, url_search, url_replace, logger)
+            import_content = self._wrap_sql_for_import(cleaned_content, logger)
             
-            # Write cleaned version
+            # Write cleaned version (without wrapper; file is for manual retry)
             if is_gzipped:
                 with gzip.open(repaired_path, 'wt', encoding='utf-8') as output_file:
                     output_file.write(cleaned_content)
@@ -368,7 +415,7 @@ class DatabaseManager:
             import_result = subprocess.run([
                 'docker-compose', 'exec', '-T', 'mysql',
                 'mysql', f'-u{db_user}', f'-p{db_password}', db_name
-            ], input=cleaned_content, cwd=project_path, capture_output=True, text=True)
+            ], input=import_content, cwd=project_path, capture_output=True, text=True)
             
             if import_result.returncode == 0:
                 logger.log(f"   ✅ Database imported successfully using repaired file: {repaired_name}")
