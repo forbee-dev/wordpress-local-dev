@@ -254,6 +254,7 @@ class DockerManager:
     volumes:
       - ./wp-content:/var/www/html/wp-content
       - ./php-uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
+      - ./php-fpm-pool.conf:/usr/local/etc/php-fpm.d/www.conf
       - wordpress_data:/var/www/html
     networks:
       - wordpress_network
@@ -361,7 +362,7 @@ DOMAIN={domain.split('/')[0]}
             f.write(env_content)
     
     def _create_php_config(self, project_path):
-        """Create custom PHP configuration for file uploads"""
+        """Create custom PHP configuration for file uploads and PHP-FPM pool settings"""
         php_config = """; PHP Upload Configuration
 ; Increase file upload limits for WordPress development
 
@@ -389,6 +390,33 @@ max_input_time = 300
         
         with open(project_path / "php-uploads.ini", 'w') as f:
             f.write(php_config)
+        
+        # Create PHP-FPM pool configuration
+        php_fpm_pool_config = """; PHP-FPM Pool Configuration
+; Override default pool settings to increase max_children for better performance
+
+[www]
+; Maximum number of child processes
+pm.max_children = 20
+
+; Number of child processes created on startup
+pm.start_servers = 5
+
+; Minimum number of idle server processes
+pm.min_spare_servers = 3
+
+; Maximum number of idle server processes
+pm.max_spare_servers = 8
+
+; Maximum number of requests each child process should execute before respawning
+pm.max_requests = 500
+
+; Process manager style (static, dynamic, or ondemand)
+pm = dynamic
+"""
+        
+        with open(project_path / "php-fpm-pool.conf", 'w') as f:
+            f.write(php_fpm_pool_config)
     
     def get_container_id(self, project_path, service_name):
         """Get the container ID for a docker-compose service. Returns None if not found."""
