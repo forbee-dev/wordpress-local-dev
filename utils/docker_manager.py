@@ -396,6 +396,10 @@ max_input_time = 300
 ; Override default pool settings to increase max_children for better performance
 
 [www]
+; User and group for PHP-FPM processes (required)
+user = www-data
+group = www-data
+
 ; Maximum number of child processes
 pm.max_children = 20
 
