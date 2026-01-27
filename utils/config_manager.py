@@ -11,7 +11,8 @@ class ConfigManager:
         """Create nginx configuration"""
         
         ssl_config = """
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     ssl_certificate /etc/nginx/ssl/cert.pem;
     ssl_certificate_key /etc/nginx/ssl/key.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
