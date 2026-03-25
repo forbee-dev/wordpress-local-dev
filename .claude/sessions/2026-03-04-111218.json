@@ -1,0 +1,37 @@
+{
+  "sessionId": "84481f78-dd71-41b7-a10a-54da3194b5fa",
+  "timestamp": "2026-03-04T11:12:18Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev/wordpress-projects/tvmatchen/repository",
+  "git": {
+    "branch": "CDN-1514-t-vmatchen-sport-article-page-sport",
+    "uncommittedChanges": [
+      " M wp-content/themes/tvkampen/acf-json/group_6720b45553368.json",
+      " M wp-content/themes/tvkampen/assets/css/maps/styles.css.map",
+      " M wp-content/themes/tvkampen/assets/css/styles.css",
+      " M wp-content/themes/tvkampen/assets/js/main.js",
+      " M wp-content/themes/tvkampen/assets/js/main.js.map",
+      " M wp-content/themes/tvkampen/assets/src/js/index.js",
+      " M wp-content/themes/tvkampen/assets/src/scss/block/_quote.scss",
+      " M wp-content/themes/tvkampen/assets/src/scss/styles.scss",
+      " M wp-content/themes/tvkampen/languages/da_DK.po",
+      " M wp-content/themes/tvkampen/languages/nb_NO.po",
+      " M wp-content/themes/tvkampen/languages/sv_SE.l10n.php",
+      " M wp-content/themes/tvkampen/languages/sv_SE.mo",
+      " M wp-content/themes/tvkampen/languages/sv_SE.po",
+      " M wp-content/themes/tvkampen/modules/block-manager.php",
+      " M wp-content/themes/tvkampen/single-sport-posts.php",
+      " M wp-content/themes/tvkampen/tvkampen.pot",
+      "?? wp-content/themes/tvkampen/acf-json/group_fact_box_block.json",
+      "?? wp-content/themes/tvkampen/acf-json/group_most_read_block.json",
+      "?? wp-content/themes/tvkampen/assets/src/js/social-sharing.js",
+      "?? wp-content/themes/tvkampen/assets/src/scss/component/_social-sharing.scss"
+    ],
+    "recentCommits": [
+      "ccab6163 Fix SEO test suite for protocol-agnostic URL matching and Vinter-OS noindex",
+      "1b9c8c24 CDM-1567/Install Permalink Manager Migration Plugin Through Composer",
+      "37151f5f Enhance translation loading for vertical contexts",
+      "e816834e Add URL field to PM data structure and update templates for link integration",
+      "78e7ac32 Strip unnecessary schema data for review pages to improve structured data quality"
+    ]
+  }
+}

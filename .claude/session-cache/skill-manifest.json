@@ -1,0 +1,98 @@
+[
+  {
+    "name": "continuous-learning",
+    "description": "Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents. Project-scoped instincts prevent cross-project contamination.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/marketplaces/forbee-dev/forgebee/skills/continuous-learning/SKILL.md"
+  },
+  {
+    "name": "forgebee-setup",
+    "description": ">",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/marketplaces/forbee-dev/forgebee/skills/forgebee-setup/SKILL.md"
+  },
+  {
+    "name": "project-router",
+    "description": "",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/marketplaces/forbee-dev/forgebee/skills/project-router/SKILL.md"
+  },
+  {
+    "name": "wordpress-router",
+    "description": "\"Use when the user asks about WordPress codebases (plugins, themes, block themes, Gutenberg blocks, WP core checkouts) and you need to quickly classify the repo and route to the correct workflow/skill (blocks, theme.json, REST API, WP-CLI, performance, security, testing, release packaging).\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wordpress-router/SKILL.md"
+  },
+  {
+    "name": "wp-abilities-api",
+    "description": "\"Use when working with the WordPress Abilities API (wp_register_ability, wp_register_ability_category, /wp-json/wp-abilities/v1/*, @wordpress/abilities) including defining abilities, categories, meta, REST exposure, and permissions checks for clients.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-abilities-api/SKILL.md"
+  },
+  {
+    "name": "wp-block-development",
+    "description": "\"Use when developing WordPress (Gutenberg) blocks: block.json metadata, register_block_type(_from_metadata), attributes/serialization, supports, dynamic rendering (render.php/render_callback), deprecations/migrations, viewScript vs viewScriptModule, and @wordpress/scripts/@wordpress/create-block build and test workflows.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-block-development/SKILL.md"
+  },
+  {
+    "name": "wp-block-themes",
+    "description": "\"Use when developing WordPress block themes: theme.json (global settings/styles), templates and template parts, patterns, style variations, and Site Editor troubleshooting (style hierarchy, overrides, caching).\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-block-themes/SKILL.md"
+  },
+  {
+    "name": "wp-interactivity-api",
+    "description": "\"Use when building or debugging WordPress Interactivity API features (data-wp-* directives, @wordpress/interactivity store/state/actions, block viewScriptModule integration, wp_interactivity_*()) including performance, hydration, and directive behavior.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-interactivity-api/SKILL.md"
+  },
+  {
+    "name": "wp-performance",
+    "description": "\"Use when investigating or improving WordPress performance (backend-only agent): profiling and measurement (WP-CLI profile/doctor, Server-Timing, Query Monitor via REST headers), database/query optimization, autoloaded options, object caching, cron, HTTP API calls, and safe verification.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-performance/SKILL.md"
+  },
+  {
+    "name": "wp-phpstan",
+    "description": "\"Use when configuring, running, or fixing PHPStan static analysis in WordPress projects (plugins/themes/sites): phpstan.neon setup, baselines, WordPress-specific typing, and handling third-party plugin classes.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-phpstan/SKILL.md"
+  },
+  {
+    "name": "wp-playground",
+    "description": "\"Use for WordPress Playground workflows: fast disposable WP instances in the browser or locally via @wp-playground/cli (server, run-blueprint, build-snapshot), auto-mounting plugins/themes, switching WP/PHP versions, blueprints, and debugging (Xdebug).\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-playground/SKILL.md"
+  },
+  {
+    "name": "wp-plugin-development",
+    "description": "\"Use when developing WordPress plugins: architecture and hooks, activation/deactivation/uninstall, admin UI and Settings API, data storage, cron/tasks, security (nonces/capabilities/sanitization/escaping), and release packaging.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-plugin-development/SKILL.md"
+  },
+  {
+    "name": "wp-project-triage",
+    "description": "\"Use when you need a deterministic inspection of a WordPress repository (plugin/theme/block theme/WP core/Gutenberg/full site) including tooling/tests/version hints, and a structured JSON report to guide workflows and guardrails.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-project-triage/SKILL.md"
+  },
+  {
+    "name": "wp-rest-api",
+    "description": "\"Use when building, extending, or debugging WordPress REST API endpoints/routes: register_rest_route, WP_REST_Controller/controller classes, schema/argument validation, permission_callback/authentication, response shaping, register_rest_field/register_meta, or exposing CPTs/taxonomies via show_in_rest.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-rest-api/SKILL.md"
+  },
+  {
+    "name": "wp-wpcli-and-ops",
+    "description": "\"Use when working with WP-CLI (wp) for WordPress operations: safe search-replace, db export/import, plugin/theme/user/content management, cron, cache flushing, multisite, and scripting/automation with wp-cli.yml.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wp-wpcli-and-ops/SKILL.md"
+  },
+  {
+    "name": "wpds",
+    "description": "\"Use when building UIs leveraging the WordPress Design System (WPDS) and its components, tokens, patterns, etc.\"",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/skills/wpds/SKILL.md"
+  }
+]

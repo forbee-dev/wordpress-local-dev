@@ -1,0 +1,30 @@
+{
+  "wordpress": {
+    "type": "none",
+    "ecosystem": []
+  },
+  "php": {
+    "detected": false,
+    "tools": []
+  },
+  "node": {
+    "detected": false,
+    "tools": []
+  },
+  "styling": {
+    "systems": []
+  },
+  "supabase": {
+    "detected": false
+  },
+  "database": {
+    "orm": "none"
+  },
+  "devops": {
+    "ci": [
+      "github-actions"
+    ]
+  },
+  "project_type": "unknown",
+  "has_claude_md": true
+}
