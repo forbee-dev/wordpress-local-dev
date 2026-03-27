@@ -81,7 +81,7 @@ uploads/
 *.key
 *.crt
 # Exception: reverse proxy default SSL (needed for the shared proxy to start)
-!reverse-proxy/default-ssl/*.pem
+# reverse-proxy default SSL certs are generated locally, not committed
 
 # Reverse proxy generated configs (auto-generated when projects start)
 reverse-proxy/conf.d/*.conf
