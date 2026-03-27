@@ -80,6 +80,8 @@ uploads/
 *.pem
 *.key
 *.crt
+# Exception: reverse proxy default SSL (needed for the shared proxy to start)
+!reverse-proxy/default-ssl/*.pem
 
 # OS Files
 .DS_Store

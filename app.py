@@ -1,26 +1,32 @@
 import os
 import json
 import shutil
-import subprocess
-import platform
-import gzip
-import re
 import tempfile
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from pathlib import Path
-import yaml
 from utils.project_manager import ProjectManager
 from utils.ssl_generator import SSLGenerator
 from utils.hosts_manager import HostsManager
 
 app = Flask(__name__)
-app.secret_key = 'wordpress-local-dev-secret-key'
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(24).hex()
 
 # Initialize managers
 project_manager = ProjectManager()
 ssl_generator = SSLGenerator()
 hosts_manager = HostsManager()
+
+# Detect Docker Compose version at startup
+try:
+    from utils.docker_compose_detect import get_compose_command, get_compose_version
+    _compose_cmd = get_compose_command()
+    print(f"🐳 Docker Compose detected: {' '.join(_compose_cmd)} ({get_compose_version()})")
+except RuntimeError as e:
+    print(f"⚠️  WARNING: {e}")
+    print("   Some features will not work without Docker Compose.")
+except Exception as e:
+    print(f"⚠️  WARNING: Could not detect Docker Compose: {e}")
 
 # Cache for WordPress versions (cache for 1 hour)
 wordpress_versions_cache = {
@@ -28,116 +34,6 @@ wordpress_versions_cache = {
     'timestamp': 0,
     'cache_duration': 3600  # 1 hour in seconds
 }
-
-def is_gzipped_file(file_path):
-    """Check if a file is gzipped by reading its magic bytes"""
-    try:
-        with open(file_path, 'rb') as f:
-            magic = f.read(2)
-            return magic == b'\x1f\x8b'
-    except Exception:
-        return False
-
-def validate_and_repair_database(file_path):
-    """Validate a database file and repair if needed"""
-    file_path = Path(file_path)
-    
-    # Check if file is gzipped
-    is_gzipped = (
-        file_path.suffix.lower() == '.gz' or 
-        file_path.name.lower().endswith('.sql.gz') or
-        is_gzipped_file(file_path)
-    )
-    
-    print(f"📋 Validating database file: {file_path.name}")
-    print(f"   📦 File type: {'Gzipped SQL' if is_gzipped else 'Plain SQL'}")
-    print(f"   📏 File size: {file_path.stat().st_size:,} bytes")
-    
-    try:
-        # Test if file can be read cleanly
-        if is_gzipped:
-            try:
-                with gzip.open(file_path, 'rt', encoding='utf-8') as f:
-                    content = f.read()
-                print("   ✅ File validation: Perfect UTF-8 encoding")
-                return str(file_path), None  # No repair needed
-            except UnicodeDecodeError as e:
-                print(f"   ⚠️  UTF-8 decode error found: {str(e)[:100]}...")
-                return repair_database_file(file_path, is_gzipped)
-        else:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                print("   ✅ File validation: Perfect UTF-8 encoding")
-                return str(file_path), None  # No repair needed
-            except UnicodeDecodeError as e:
-                print(f"   ⚠️  UTF-8 decode error found: {str(e)[:100]}...")
-                return repair_database_file(file_path, is_gzipped)
-                
-    except Exception as e:
-        print(f"   ❌ Validation error: {str(e)}")
-        return str(file_path), f"Validation failed: {str(e)}"
-
-def repair_database_file(file_path, is_gzipped):
-    """Repair a database file with encoding issues"""
-    file_path = Path(file_path)
-    
-    # Create repaired filename
-    if file_path.name.endswith('.sql.gz'):
-        repaired_name = file_path.name.replace('.sql.gz', '_repaired.sql.gz')
-    elif file_path.name.endswith('.sql'):
-        repaired_name = file_path.name.replace('.sql', '_repaired.sql')
-    else:
-        repaired_name = f"{file_path.stem}_repaired{file_path.suffix}"
-    
-    repaired_path = file_path.parent / repaired_name
-    
-    print(f"   🔧 Repairing file: {repaired_name}")
-    
-    try:
-        # Read with error handling
-        print("   📖 Reading file with error replacement...")
-        if is_gzipped:
-            with gzip.open(file_path, 'rt', encoding='utf-8', errors='replace') as input_file:
-                content = input_file.read()
-        else:
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as input_file:
-                content = input_file.read()
-        
-        # Clean the content
-        print("   🧹 Cleaning content...")
-        original_length = len(content)
-        
-        # Remove replacement characters (�)
-        cleaned_content = content.replace('�', '')
-        
-        # Remove control characters that shouldn't be in SQL
-        cleaned_content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', cleaned_content)
-        
-        final_length = len(cleaned_content)
-        removed_chars = original_length - final_length
-        
-        print(f"   ✂️  Removed {removed_chars:,} problematic characters")
-        
-        # Write cleaned version
-        print("   💾 Writing cleaned file...")
-        if is_gzipped:
-            with gzip.open(repaired_path, 'wt', encoding='utf-8') as output_file:
-                output_file.write(cleaned_content)
-        else:
-            with open(repaired_path, 'w', encoding='utf-8') as output_file:
-                output_file.write(cleaned_content)
-        
-        print(f"   ✅ Repaired file created: {repaired_name}")
-        print(f"   📊 Original: {file_path.stat().st_size:,} bytes")
-        print(f"   📊 Repaired: {repaired_path.stat().st_size:,} bytes")
-        print(f"   📊 Cleaned: {removed_chars:,} characters")
-        
-        return str(repaired_path), f"File repaired: removed {removed_chars:,} corrupted characters"
-        
-    except Exception as e:
-        print(f"   ❌ Repair failed: {str(e)}")
-        return str(file_path), f"Repair failed: {str(e)}"
 
 @app.route('/')
 def index():
@@ -158,43 +54,58 @@ def get_wordpress_versions():
     
     try:
         import requests
-        
+
         print("Fetching WordPress versions from Docker Hub...")
-        
+
         # Fetch WordPress image tags from Docker Hub API
+        # Paginate through results — Docker Hub returns newest tags first and
+        # beta/RC tags now outnumber stable tags on the first page.
+        versions = []
+        processed_tags = set()
         url = "https://hub.docker.com/v2/repositories/library/wordpress/tags/?page_size=100"
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code != 200:
-            print(f"Docker Hub API returned status {response.status_code}")
-            # Use cached data if available, otherwise fallback
+        max_pages = 5  # Up to 500 tags to ensure we find enough stable versions
+
+        for _page in range(max_pages):
+            response = requests.get(url, timeout=10)
+
+            if response.status_code != 200:
+                print(f"Docker Hub API returned status {response.status_code}")
+                break
+
+            data = response.json()
+
+            for tag_info in data.get('results', []):
+                tag = tag_info.get('name', '')
+                if not tag or tag in processed_tags:
+                    continue
+
+                processed_tags.add(tag)
+
+                # Parse tag to create description
+                description = parse_wordpress_tag(tag)
+                if description:
+                    versions.append({
+                        'version': tag,
+                        'description': description
+                    })
+
+            # Stop paginating once we have enough stable versions
+            if len(versions) >= 30:
+                break
+
+            url = data.get('next')
+            if not url:
+                break
+
+        if not versions:
+            print("No stable versions found after pagination")
             if wordpress_versions_cache['data']:
                 return jsonify(wordpress_versions_cache['data'])
             return jsonify(get_fallback_versions())
-        
-        data = response.json()
-        versions = []
-        processed_tags = set()
-        
-        # Process the tags and create meaningful descriptions
-        for tag_info in data.get('results', []):
-            tag = tag_info.get('name', '')
-            if not tag or tag in processed_tags:
-                continue
-                
-            processed_tags.add(tag)
-            
-            # Parse tag to create description
-            description = parse_wordpress_tag(tag)
-            if description:
-                versions.append({
-                    'version': tag,
-                    'description': description
-                })
-        
+
         # Sort versions by priority (latest first, then numeric versions)
         versions.sort(key=lambda x: get_version_priority(x['version']))
-        
+
         # Limit to most relevant versions
         final_versions = versions[:20]
         
@@ -254,15 +165,7 @@ def parse_wordpress_tag(tag):
         if php_version:
             description += f' (PHP {php_version})'
         elif not variant:
-            # Default PHP version for main WordPress versions
-            if wp_version.startswith('6.4') or wp_version.startswith('6.5') or wp_version.startswith('6.6'):
-                description += ' (PHP 8.1)'
-            elif wp_version.startswith('6.2') or wp_version.startswith('6.3'):
-                description += ' (PHP 8.0)'
-            elif wp_version.startswith('6.0') or wp_version.startswith('6.1'):
-                description += ' (PHP 8.0)'
-            else:
-                description += ' (Default PHP)'
+            description += ' (Default PHP)'
         
         if variant and variant not in ['apache', 'fpm']:
             description += f' - {variant.title()}'
@@ -296,15 +199,16 @@ def get_fallback_versions():
     """Fallback WordPress versions if Docker Hub API fails"""
     return [
         {'version': 'latest', 'description': 'Latest stable WordPress (Recommended)'},
+        {'version': '6.8', 'description': 'WordPress 6.8 (Default PHP)'},
+        {'version': '6.7', 'description': 'WordPress 6.7 (Default PHP)'},
+        {'version': '6.6', 'description': 'WordPress 6.6 (Default PHP)'},
+        {'version': '6.5', 'description': 'WordPress 6.5 (Default PHP)'},
         {'version': '6.4', 'description': 'WordPress 6.4 (PHP 8.1)'},
         {'version': '6.3', 'description': 'WordPress 6.3 (PHP 8.0)'},
-        {'version': '6.2', 'description': 'WordPress 6.2 (PHP 8.0)'},
-        {'version': '6.1', 'description': 'WordPress 6.1 (PHP 8.0)'},
-        {'version': '6.0', 'description': 'WordPress 6.0 (PHP 8.0)'},
+        {'version': 'php8.4', 'description': 'Latest WordPress with PHP 8.4'},
+        {'version': 'php8.3', 'description': 'Latest WordPress with PHP 8.3'},
         {'version': 'php8.2', 'description': 'Latest WordPress with PHP 8.2'},
         {'version': 'php8.1', 'description': 'Latest WordPress with PHP 8.1'},
-        {'version': 'php8.0', 'description': 'Latest WordPress with PHP 8.0'},
-        {'version': 'php7.4', 'description': 'Latest WordPress with PHP 7.4'},
     ]
 
 @app.route('/api/create-project', methods=['POST'])
@@ -319,27 +223,13 @@ def create_project():
         
         # Handle file upload - save to temp dir (never create project folder before create_project)
         db_file_path = None
-        validation_message = None
         if 'db_file' in request.files:
             file = request.files['db_file']
             if file and file.filename:
                 tmpdir = tempfile.mkdtemp(prefix='wp-create-db-')
                 upload_path = Path(tmpdir) / secure_filename(file.filename)
                 file.save(str(upload_path))
-                
-                print(f"🔄 Validating uploaded database file for project: {project_name}")
-                final_db_path, repair_message = validate_and_repair_database(upload_path)
-                db_file_path = Path(final_db_path)
-                
-                if repair_message:
-                    validation_message = f"Database file repaired: {repair_message}"
-                    if final_db_path != str(upload_path) and Path(upload_path).exists():
-                        try:
-                            os.remove(str(upload_path))
-                        except Exception:
-                            pass
-                else:
-                    validation_message = "Database file validation passed"
+                db_file_path = upload_path
         
         # Get remaining form data
         wordpress_version = request.form.get('wordpress_version')
@@ -366,13 +256,10 @@ def create_project():
         )
         
         if result['success']:
-            response_data = {
+            return jsonify({
                 'message': 'Project created successfully!',
                 'project': result['project']
-            }
-            if validation_message:
-                response_data['validation_message'] = validation_message
-            return jsonify(response_data)
+            })
         else:
             return jsonify({'error': result['error']}), 400
             

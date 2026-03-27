@@ -1,0 +1,99 @@
+project: wordpress-local-dev
+updated: "2026-03-27T12:15:00Z"
+
+counters:
+  feature: 2
+  decision: 3
+  story: 10
+
+features:
+  - id: F-1
+    name: infrastructure-hardening
+    phase: delivery
+    status: active
+    created: "2026-03-27T12:00:00Z"
+    updated: "2026-03-27T12:15:00Z"
+    summary: >
+      Fix bugs, security issues, and reliability problems identified in
+      infrastructure code review. Covers port collision, docker-compose v2,
+      missing error handling, runtime crashes, and code quality.
+    stories:
+      - id: S-1
+        title: Fix Runtime Crashes
+        status: done
+        agent: backend-engineer
+        effort: XS
+        priority: P0
+        requirements: [R1, R2]
+      - id: S-2
+        title: Docker Compose Detection Module
+        status: done
+        agent: backend-engineer
+        effort: S
+        priority: P0
+        requirements: [R4]
+      - id: S-3
+        title: Migrate docker-compose Calls — Core Files
+        status: done
+        agent: backend-engineer
+        effort: M
+        priority: P0
+        requirements: [R4]
+      - id: S-4
+        title: Migrate docker-compose — Makefile + app.py Startup
+        status: done
+        agent: backend-engineer
+        effort: S
+        priority: P1
+        requirements: [R4]
+      - id: S-5
+        title: Unique Port Allocation Per Project
+        status: done
+        agent: backend-engineer
+        effort: L
+        priority: P0
+        requirements: [R3]
+      - id: S-6
+        title: Add Subprocess Timeouts
+        status: done
+        agent: backend-engineer
+        effort: S
+        priority: P1
+        requirements: [R5]
+      - id: S-7
+        title: Fix HostsManager to Surface Warnings
+        status: done
+        agent: backend-engineer
+        effort: S
+        priority: P1
+        requirements: [R8]
+      - id: S-8
+        title: Cross-Platform and Deprecation Fixes
+        status: done
+        agent: backend-engineer
+        effort: S
+        priority: P2
+        requirements: [R9, R10, R11, R12]
+      - id: S-9
+        title: Remove Duplicate Validation + Unused Imports
+        status: done
+        agent: backend-engineer
+        effort: S
+        priority: P2
+        requirements: [R6, R7]
+    decisions:
+      - id: D-1
+        type: architecture
+        ruling: approved
+        summary: "Sequential port blocks — base 10000, stride 10, per-project index"
+        date: "2026-03-27"
+        details: docs/planning/architecture/ADR-001-unique-port-allocation-per-project.md
+      - id: D-2
+        type: architecture
+        ruling: approved
+        summary: "Docker compose detection utility — v2 first, v1 fallback, cached"
+        date: "2026-03-27"
+        details: docs/planning/architecture/ADR-002-docker-compose-v1-v2-detection.md
+    risks:
+      - "S-3 and S-5 both touch docker_manager.py and project_manager.py — must be sequenced"
+      - "Port migration for existing projects needs careful handling to avoid breaking running containers"

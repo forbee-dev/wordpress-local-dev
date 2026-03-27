@@ -5,6 +5,7 @@ import subprocess
 import platform
 import re
 import time
+import datetime
 from pathlib import Path
 
 from .ssl_generator import SSLGenerator
@@ -14,6 +15,9 @@ from .docker_manager import DockerManager
 from .repository_manager import RepositoryManager
 from .config_manager import ConfigManager
 from .wordpress_manager import WordPressManager
+from .port_allocator import PortAllocator
+from .docker_compose_detect import compose_command
+from .proxy_manager import ProxyManager
 
 
 class ProjectManager:
@@ -31,6 +35,7 @@ class ProjectManager:
         self.repository_manager = RepositoryManager()
         self.config_manager = ConfigManager()
         self.wordpress_manager = WordPressManager(self.docker_manager)
+        self.proxy_manager = ProxyManager(Path('.'), self.projects_dir)
     
     def create_project(self, project_name, wordpress_version, repo_url, db_file_path=None, 
                       subfolder='', custom_domain='', enable_ssl=True, enable_redis=True):
@@ -78,9 +83,15 @@ class ProjectManager:
             if repo_url:
                 repo_structure = self.repository_manager.clone_repository(repo_url, project_path)
             
+            # Allocate unique ports
+            allocator = PortAllocator(self.projects_dir)
+            port_index = allocator.allocate_next_index()
+            ports = allocator.get_ports_for_index(port_index)
+            print(f"   Allocated ports for project (index {port_index}): HTTP={ports['HTTP_PORT']}, HTTPS={ports['HTTPS_PORT']}")
+
             # Create docker-compose.yml and related files
-            self.docker_manager.create_docker_compose(project_path, project_name, wordpress_version, 
-                                                     domain, enable_ssl, enable_redis)
+            self.docker_manager.create_docker_compose(project_path, project_name, wordpress_version,
+                                                     domain, enable_ssl, enable_redis, ports=ports)
             
             # Create configuration files
             self.config_manager.create_makefile(project_path, project_name, domain, db_file_path)
@@ -107,14 +118,18 @@ class ProjectManager:
                 'subfolder': subfolder,
                 'enable_ssl': enable_ssl,
                 'enable_redis': enable_redis,
-                'created_at': str(Path().resolve()),
+                'created_at': datetime.datetime.now().isoformat(),
                 'db_file': db_file_path,
-                'repository_structure': repo_structure_json
+                'repository_structure': repo_structure_json,
+                'port_index': port_index,
+                'ports': ports
             }
             
             # Add to hosts file
-            self.hosts_manager.add_host(domain.split('/')[0])
-            
+            hosts_result = self.hosts_manager.add_host(domain.split('/')[0])
+            if isinstance(hosts_result, dict) and hosts_result.get('manual_action_required'):
+                config['hosts_instruction'] = hosts_result.get('instruction')
+
             # Database file is already saved to project data folder during upload
             if db_file_path and Path(db_file_path).exists():
                 # Update config with project-relative path for reference
@@ -130,7 +145,12 @@ class ProjectManager:
             
             if not start_result['success']:
                 print(f"   ⚠️  Warning: {start_result['error']}")
-            
+            else:
+                # Connect to shared reverse proxy
+                config_data = self.config_manager.read_project_config(project_path)
+                if config_data:
+                    self.proxy_manager.on_project_start(project_name, config_data)
+
             return {'success': True, 'project': config}
             
         except Exception as e:
@@ -150,8 +170,8 @@ class ProjectManager:
                         status = self.docker_manager.get_project_status(project_dir)
                         config['status'] = status
                         projects.append(config)
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"Warning: could not load project {project_dir.name}: {e}")
         return projects
     
     def get_project_status(self, project_name):
@@ -175,11 +195,16 @@ class ProjectManager:
             if result['success']:
                 # Give containers a moment to fully start
                 time.sleep(5)
-                
+
                 # Configure WordPress debug settings in wp-config.php
                 print(f"   🔧 Configuring WordPress debug settings...")
                 self.wordpress_manager.fix_wp_config_debug(project_path)
-                
+
+                # Connect to shared reverse proxy
+                config = self.config_manager.read_project_config(project_path)
+                if config:
+                    self.proxy_manager.on_project_start(project_name, config)
+
                 return {'success': True, 'message': 'Project started successfully'}
             else:
                 return result
@@ -190,7 +215,9 @@ class ProjectManager:
     def stop_project(self, project_name):
         """Stop a WordPress project"""
         project_path = self.projects_dir / project_name
-        return self.docker_manager.stop_project(project_path)
+        result = self.docker_manager.stop_project(project_path)
+        self.proxy_manager.on_project_stop(project_name)
+        return result
     
     def restart_project(self, project_name):
         """Restart a WordPress project"""
@@ -206,14 +233,17 @@ class ProjectManager:
         try:
             # Stop containers first
             self.docker_manager.stop_project(project_path)
-            
+
+            # Disconnect from shared reverse proxy
+            self.proxy_manager.on_project_delete(project_name)
+
             # Read config to get domain for hosts file cleanup
             config = self.config_manager.read_project_config(project_path)
             if config:
                 domain = config.get('domain', '').split('/')[0]
                 if domain:
                     self.hosts_manager.remove_host(domain)
-            
+
             # Remove project directory
             shutil.rmtree(project_path)
             
@@ -367,8 +397,8 @@ class ProjectManager:
             # Update hosts file
             print(f"   🔄 Updating hosts file...")
             self.hosts_manager.remove_host(old_domain.split('/')[0])
-            self.hosts_manager.add_host(new_domain.split('/')[0])
-            
+            hosts_result = self.hosts_manager.add_host(new_domain.split('/')[0])
+
             # Generate new SSL certificate if SSL is enabled
             if config.get('enable_ssl', True):
                 print(f"   🔐 Generating new SSL certificate for {new_domain.split('/')[0]}...")
@@ -383,10 +413,16 @@ class ProjectManager:
             config.update(updates)
             
             # Rebuild configuration files
-            print(f"   🔄 Updating configuration files...")
+            print(f"   Updating configuration files...")
+            existing_ports = None
+            if config.get('port_index'):
+                allocator = PortAllocator(self.projects_dir)
+                existing_ports = allocator.get_ports_for_index(config['port_index'])
+
             self.docker_manager.create_docker_compose(
                 project_path, config['name'], config.get('wordpress_version', 'latest'),
-                new_domain, config.get('enable_ssl', True), config.get('enable_redis', True)
+                new_domain, config.get('enable_ssl', True), config.get('enable_redis', True),
+                ports=existing_ports
             )
             
             self.config_manager.create_nginx_config(
@@ -400,14 +436,17 @@ class ProjectManager:
             
             if start_result['success']:
                 print(f"   ✅ Domain updated successfully")
-                return {'success': True, 'message': f'Domain updated from {old_domain} to {new_domain}'}
+                response = {'success': True, 'message': f'Domain updated from {old_domain} to {new_domain}'}
+                if isinstance(hosts_result, dict) and hosts_result.get('manual_action_required'):
+                    response['hosts_instruction'] = hosts_result.get('instruction')
+                return response
             else:
                 return {'success': False, 'error': f'Failed to start containers: {start_result["error"]}'}
-                
+
         except Exception as e:
             print(f"   ❌ Error updating domain: {str(e)}")
             return {'success': False, 'error': str(e)}
-    
+
     def update_repository(self, project_name, new_repo_url):
         """Update repository URL and re-clone content for an existing project"""
         project_path = self.projects_dir / project_name
@@ -590,7 +629,7 @@ class ProjectManager:
         """Start containers and perform initial setup"""
         try:
             start_result = subprocess.run(
-                ['docker-compose', 'up', '-d'],
+                compose_command('up', '-d'),
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -637,9 +676,9 @@ class ProjectManager:
             if project_path.exists():
                 shutil.rmtree(project_path)
                 print(f"   🧹 Cleaned up failed project directory")
-        except:
-            pass
-    
+        except Exception as e:
+            print(f"Warning: cleanup failed: {e}")
+
     def _ensure_ssl_certificates(self, project_name):
         """Ensure SSL certificates are present and up to date for a project"""
         try:
@@ -677,7 +716,8 @@ class ProjectManager:
                     if cert_age > 30 * 24 * 3600:  # 30 days
                         print(f"   🔐 SSL certificates are old for {project_name}, regenerating...")
                         ssl_needs_update = True
-                except:
+                except Exception as e:
+                    print(f"Warning: SSL cert age check failed: {e}")
                     ssl_needs_update = True
             
             # Regenerate SSL certificates if needed
@@ -698,7 +738,69 @@ class ProjectManager:
         except Exception as e:
             print(f"   ⚠️  Warning: Error checking SSL certificates for {project_name}: {str(e)}")
     
-    # Legacy method for backward compatibility - removed as it's now handled automatically
-    # def fix_php_upload_limits(self, project_name):
-    #     """PHP upload limits are now handled automatically in all projects"""
-    #     return {'success': True, 'message': 'PHP upload limits are automatically configured (100MB)'}
+    def fix_php_upload_limits(self, project_name):
+        """PHP upload limits are now handled automatically in all projects"""
+        return {'success': True, 'message': 'PHP upload limits are automatically configured (100MB)'}
+
+    def migrate_project_ports(self, project_name):
+        """Assign unique ports to an existing project that still uses default ports."""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+
+        config = self.config_manager.read_project_config(project_path)
+        if not config:
+            return {'success': False, 'error': 'Project config not found'}
+
+        if config.get('port_index'):
+            ports = PortAllocator(self.projects_dir).get_ports_for_index(config['port_index'])
+            return {'success': True, 'message': f'Already migrated (index {config["port_index"]})', 'ports': ports}
+
+        allocator = PortAllocator(self.projects_dir)
+        port_index = allocator.allocate_next_index()
+        ports = allocator.get_ports_for_index(port_index)
+
+        # Update config
+        self.config_manager.update_project_config(project_path, {
+            'port_index': port_index,
+            'ports': ports,
+        })
+
+        # Rewrite .env with new ports
+        self.docker_manager.create_docker_compose(
+            project_path, config['name'],
+            config.get('wordpress_version', 'latest'),
+            config.get('domain', f'local.{project_name}.test'),
+            config.get('enable_ssl', True),
+            config.get('enable_redis', True),
+            ports=ports,
+        )
+
+        # Regenerate nginx config (unchanged, but ensures consistency)
+        self.config_manager.create_nginx_config(
+            project_path, config['name'],
+            config.get('domain', f'local.{project_name}.test'),
+            config.get('enable_ssl', True),
+            config.get('subfolder', ''),
+        )
+
+        return {
+            'success': True,
+            'message': f'Migrated to port index {port_index}',
+            'port_index': port_index,
+            'ports': ports,
+        }
+
+    def migrate_all_project_ports(self):
+        """Migrate all existing projects to unique ports."""
+        results = []
+        for project_dir in sorted(self.projects_dir.iterdir()):
+            if not project_dir.is_dir():
+                continue
+            config = self.config_manager.read_project_config(project_dir)
+            if not config:
+                continue
+            name = config.get('name', project_dir.name)
+            result = self.migrate_project_ports(name)
+            results.append({'project': name, **result})
+        return results

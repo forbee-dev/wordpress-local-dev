@@ -2,6 +2,8 @@ import subprocess
 import shutil
 import re
 from pathlib import Path
+from .docker_compose_detect import compose_command
+from .port_allocator import PortAllocator
 
 
 class WordPressManager:
@@ -281,11 +283,9 @@ echo "wp-config.php updated successfully\\n";
         db_password = env_vars.get('DB_PASSWORD', 'wordpress_password')
         try:
             result = subprocess.run(
-                [
-                    'docker-compose', 'exec', '-T', 'mysql',
+                compose_command('exec', '-T', 'mysql',
                     'mysql', f'-u{db_user}', f'-p{db_password}', db_name,
-                    '-e', 'SHOW TABLES;'
-                ],
+                    '-e', 'SHOW TABLES;'),
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -376,15 +376,22 @@ echo "wp-config.php updated successfully\\n";
                     print(f"   ✅ WP CLI already configured")
                     return {'success': True, 'message': 'WP CLI is already configured for this project'}
                 
-                print(f"   🔄 Updating docker-compose.yml to include WP CLI...")
-                # Regenerate docker-compose with WP CLI
+                print(f"   Updating docker-compose.yml to include WP CLI...")
+                # Regenerate docker-compose with WP CLI, preserving existing ports
+                existing_ports = None
+                if config.get('port_index'):
+                    projects_dir = project_path.parent
+                    allocator = PortAllocator(projects_dir)
+                    existing_ports = allocator.get_ports_for_index(config['port_index'])
+
                 docker_manager.create_docker_compose(
-                    project_path, 
-                    config['name'], 
+                    project_path,
+                    config['name'],
                     config.get('wordpress_version', 'php8.3'),
-                    config['domain'], 
-                    config.get('enable_ssl', True), 
-                    config.get('enable_redis', True)
+                    config['domain'],
+                    config.get('enable_ssl', True),
+                    config.get('enable_redis', True),
+                    ports=existing_ports
                 )
                 print(f"   ✅ Updated docker-compose.yml with WP CLI service")
                 
@@ -417,15 +424,22 @@ echo "wp-config.php updated successfully\\n";
             print(f"   🛑 Stopping containers...")
             docker_manager.stop_project(project_path)
             
-            # Rebuild docker-compose.yml with new version
-            print(f"   🔄 Updating docker-compose.yml...")
+            # Rebuild docker-compose.yml with new version, preserving existing ports
+            print(f"   Updating docker-compose.yml...")
+            existing_ports = None
+            if config.get('port_index'):
+                projects_dir = project_path.parent
+                allocator = PortAllocator(projects_dir)
+                existing_ports = allocator.get_ports_for_index(config['port_index'])
+
             docker_manager.create_docker_compose(
                 project_path,
                 config['name'],
                 new_version,
                 config['domain'],
                 config.get('enable_ssl', True),
-                config.get('enable_redis', True)
+                config.get('enable_redis', True),
+                ports=existing_ports
             )
             
             # Save updated config

@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from datetime import datetime
 
+from .docker_compose_detect import compose_command
+
 
 class DatabaseLogger:
     """Simple logger to collect messages during database operations"""
@@ -205,18 +207,19 @@ class DatabaseManager:
     def _backup_database(self, project_path, project_name, db_name, db_user, db_password, logger):
         """Create a backup of the current database"""
         try:
-            backup_filename = f"backup_before_import_{project_name}_{subprocess.run(['date', '+%Y%m%d_%H%M%S'], capture_output=True, text=True).stdout.strip()}.sql"
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_filename = f"backup_before_import_{project_name}_{timestamp}.sql"
             backup_path = project_path / 'data' / backup_filename
             
             logger.log(f"🔄 Creating database backup...")
             # Export current database (capture bytes; decode with replace to handle invalid UTF-8)
-            backup_result = subprocess.run([
-                'docker-compose', 'exec', '-T', 'mysql',
-                'mysqldump', f'-u{db_user}', f'-p{db_password}', 
-                '--single-transaction', '--routines', '--triggers', 
-                '--default-character-set=utf8mb4', db_name
-            ], cwd=project_path, capture_output=True)
-            
+            backup_result = subprocess.run(
+                compose_command('exec', '-T', 'mysql',
+                'mysqldump', f'-u{db_user}', f'-p{db_password}',
+                '--single-transaction', '--routines', '--triggers',
+                '--default-character-set=utf8mb4', db_name),
+                cwd=project_path, capture_output=True, timeout=600)
+
             if backup_result.returncode == 0:
                 out = backup_result.stdout.decode('utf-8', errors='replace')
                 with open(backup_path, 'w', encoding='utf-8', errors='replace') as f:
@@ -227,11 +230,11 @@ class DatabaseManager:
                 logger.log(f"⚠️  Backup failed: {err}")
                 # Try alternative backup method for corrupted databases
                 logger.log(f"🔄 Attempting alternative backup method...")
-                backup_result = subprocess.run([
-                    'docker-compose', 'exec', '-T', 'mysql',
-                    'mysqldump', f'-u{db_user}', f'-p{db_password}', 
-                    '--skip-extended-insert', '--skip-lock-tables', db_name
-                ], cwd=project_path, capture_output=True)
+                backup_result = subprocess.run(
+                    compose_command('exec', '-T', 'mysql',
+                    'mysqldump', f'-u{db_user}', f'-p{db_password}',
+                    '--skip-extended-insert', '--skip-lock-tables', db_name),
+                    cwd=project_path, capture_output=True, timeout=600)
                 
                 if backup_result.returncode == 0:
                     out = backup_result.stdout.decode('utf-8', errors='replace')
@@ -241,6 +244,8 @@ class DatabaseManager:
                 else:
                     logger.log(f"❌ Both backup methods failed, skipping backup")
                     
+        except subprocess.TimeoutExpired:
+            logger.log("Backup timed out after 600s")
         except Exception as e:
             logger.log(f"❌ Backup failed but continuing with import: {e}")
     
@@ -249,17 +254,19 @@ class DatabaseManager:
         logger.log(f"🗑️  Clearing database to avoid conflicts...")
         try:
             # Drop and recreate database
-            clear_result = subprocess.run([
-                'docker-compose', 'exec', '-T', 'mysql',
-                'mysql', f'-u{db_user}', f'-p{db_password}', 
-                '-e', f'DROP DATABASE IF EXISTS {db_name}; CREATE DATABASE {db_name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'
-            ], cwd=project_path, capture_output=True, text=True)
-            
+            clear_result = subprocess.run(
+                compose_command('exec', '-T', 'mysql',
+                'mysql', f'-u{db_user}', f'-p{db_password}',
+                '-e', f'DROP DATABASE IF EXISTS {db_name}; CREATE DATABASE {db_name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'),
+                cwd=project_path, capture_output=True, text=True, timeout=120)
+
             if clear_result.returncode == 0:
                 logger.log(f"✅ Database cleared and recreated successfully")
             else:
                 logger.log(f"⚠️  Database clear failed: {clear_result.stderr}")
-                
+
+        except subprocess.TimeoutExpired:
+            logger.log("Operation timed out after 120s")
         except Exception as e:
             logger.log(f"⚠️  Failed to clear database: {e}")
     
@@ -313,10 +320,10 @@ class DatabaseManager:
                 db_content = self._wrap_sql_for_import(db_content, logger)
 
                 # Import database
-                import_result = subprocess.run([
-                    'docker-compose', 'exec', '-T', 'mysql',
-                    'mysql', f'-u{db_user}', f'-p{db_password}', db_name
-                ], input=db_content, cwd=project_path, capture_output=True, text=True)
+                import_result = subprocess.run(
+                    compose_command('exec', '-T', 'mysql',
+                    'mysql', f'-u{db_user}', f'-p{db_password}', db_name),
+                    input=db_content, cwd=project_path, capture_output=True, text=True, timeout=600)
                 
                 if import_result.returncode == 0:
                     logger.log(f"   ✅ Database imported successfully using {file_type} file: {file_to_try.name}")
@@ -332,15 +339,26 @@ class DatabaseManager:
                     
                     continue  # Try next file
                     
+            except subprocess.TimeoutExpired:
+                logger.log("Operation timed out after 600s")
+                error_msg = f'Database import timed out with {file_type} file: {file_to_try.name}'
+                logger.log(f"   ❌ {error_msg}")
+                last_error = error_msg
+
+                if file_type == "original":
+                    original_failed = True
+
+                continue  # Try next file
+
             except Exception as e:
                 error_msg = f'Error reading {file_type} file {file_to_try.name}: {str(e)}'
                 logger.log(f"   ❌ {error_msg}")
                 last_error = error_msg
-                
+
                 # Mark if original file failed (for repair creation)
                 if file_type == "original":
                     original_failed = True
-                
+
                 continue  # Try next file
         
         # If original failed and no repaired file was found, try to create one
@@ -412,10 +430,10 @@ class DatabaseManager:
             logger.log(f"   ✅ Repaired file created, attempting import...")
             
             # Try importing the repaired file
-            import_result = subprocess.run([
-                'docker-compose', 'exec', '-T', 'mysql',
-                'mysql', f'-u{db_user}', f'-p{db_password}', db_name
-            ], input=import_content, cwd=project_path, capture_output=True, text=True)
+            import_result = subprocess.run(
+                compose_command('exec', '-T', 'mysql',
+                'mysql', f'-u{db_user}', f'-p{db_password}', db_name),
+                input=import_content, cwd=project_path, capture_output=True, text=True, timeout=600)
             
             if import_result.returncode == 0:
                 logger.log(f"   ✅ Database imported successfully using repaired file: {repaired_name}")
@@ -425,6 +443,9 @@ class DatabaseManager:
                 logger.log(f"   ❌ {error_msg}")
                 return {'success': False, 'error': error_msg}
                 
+        except subprocess.TimeoutExpired:
+            logger.log("Operation timed out after 600s")
+            return {'success': False, 'error': 'Database import timed out after 600s'}
         except Exception as e:
             error_msg = f'Failed to create repaired file: {str(e)}'
             logger.log(f"   ❌ {error_msg}")
