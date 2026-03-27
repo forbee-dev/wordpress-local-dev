@@ -159,7 +159,7 @@ class ConfigManager:
             db_import_command = f"""
 db-import: ## Import database from file
 \t@echo "Importing database from {relative_db_path}..."
-\t@docker-compose exec -T mysql mysql -u${{DB_USER}} -p${{DB_PASSWORD}} ${{DB_NAME}} < "{relative_db_path}"
+\t@$(COMPOSE_CMD) exec -T mysql mysql -u${{DB_USER}} -p${{DB_PASSWORD}} ${{DB_NAME}} < "{relative_db_path}"
 \t@echo "Database imported successfully!"
 """
         
@@ -169,6 +169,8 @@ db-import: ## Import database from file
 
 include .env
 
+COMPOSE_CMD ?= docker compose
+
 .PHONY: help start stop restart build logs shell db-export db-import clean status
 
 help: ## Show this help message
@@ -177,49 +179,49 @@ help: ## Show this help message
 
 start: ## Start the WordPress environment
 \t@echo "Starting WordPress environment..."
-\t@docker-compose up -d
+\t@$(COMPOSE_CMD) up -d
 \t@echo "WordPress is running at: https://${{DOMAIN}}"
 \t@echo "phpMyAdmin is running at: http://localhost:${{PHPMYADMIN_PORT}}"
 
 stop: ## Stop the WordPress environment
 \t@echo "Stopping WordPress environment..."
-\t@docker-compose down
+\t@$(COMPOSE_CMD) down
 
 restart: ## Restart the WordPress environment
 \t@echo "Restarting WordPress environment..."
-\t@docker-compose restart
+\t@$(COMPOSE_CMD) restart
 
 build: ## Build/rebuild the WordPress environment
 \t@echo "Building WordPress environment..."
-\t@docker-compose down
-\t@docker-compose up -d --build
+\t@$(COMPOSE_CMD) down
+\t@$(COMPOSE_CMD) up -d --build
 
 logs: ## Show logs
-\t@docker-compose logs -f
+\t@$(COMPOSE_CMD) logs -f
 
 debug-logs: ## Show WordPress debug logs (live)
 \t@echo "Showing WordPress debug logs..."
-\t@docker-compose exec wordpress tail -f /var/www/html/wp-content/debug.log
+\t@$(COMPOSE_CMD) exec wordpress tail -f /var/www/html/wp-content/debug.log
 
 debug-recent: ## Show recent WordPress debug entries
 \t@echo "Recent WordPress debug entries:"
-\t@docker-compose exec wordpress tail -50 /var/www/html/wp-content/debug.log
+\t@$(COMPOSE_CMD) exec wordpress tail -50 /var/www/html/wp-content/debug.log
 
 shell: ## Access WordPress container shell
-\t@docker-compose exec wordpress bash
+\t@$(COMPOSE_CMD) exec wordpress bash
 
 db-export: ## Export database to file
 \t@echo "Exporting database..."
-\t@docker-compose exec mysql mysqldump -u${{DB_USER}} -p${{DB_PASSWORD}} ${{DB_NAME}} > ./data/export_$(shell date +%Y%m%d_%H%M%S).sql
+\t@$(COMPOSE_CMD) exec mysql mysqldump -u${{DB_USER}} -p${{DB_PASSWORD}} ${{DB_NAME}} > ./data/export_$(shell date +%Y%m%d_%H%M%S).sql
 \t@echo "Database exported to ./data/"
 {db_import_command}
 clean: ## Clean up containers and volumes
 \t@echo "Cleaning up..."
-\t@docker-compose down -v
+\t@$(COMPOSE_CMD) down -v
 \t@docker system prune -f
 
 status: ## Show container status
-\t@docker-compose ps
+\t@$(COMPOSE_CMD) ps
 """
         
         with open(project_path / "Makefile", 'w') as f:
@@ -243,9 +245,10 @@ status: ## Show container status
         try:
             with open(config_file, 'r') as f:
                 return json.load(f)
-        except:
+        except Exception as e:
+            print(f"Warning: could not parse config.json: {e}")
             return None
-    
+
     def update_project_config(self, project_path, updates):
         """Update project configuration file with new values"""
         import json
@@ -262,9 +265,10 @@ status: ## Show container status
             with open(project_path / "config.json", 'w') as f:
                 json.dump(config, f, indent=2)
             return True
-        except:
+        except Exception as e:
+            print(f"Warning: could not write config.json: {e}")
             return False
-    
+
     def create_env_file(self, project_path, env_vars):
         """Create .env file with environment variables"""
         env_content = ""

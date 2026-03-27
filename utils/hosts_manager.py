@@ -17,30 +17,47 @@ class HostsManager:
             return Path("/etc/hosts")
     
     def add_host(self, domain, ip="127.0.0.1"):
-        """Add a domain to the hosts file"""
+        """Add a domain to the hosts file.
+
+        Returns a dict with:
+            success (bool): Whether the operation completed without error.
+            modified (bool): True if the hosts file was actually written.
+            manual_action_required (bool): True if the user must edit manually.
+            instruction (str|None): Shell command to run, if manual action needed.
+        """
         try:
             # Create backup before modifying
             self._create_backup()
-            
+
             # Check if entry already exists
             if self._host_exists(domain):
                 print(f"Host entry for {domain} already exists")
-                return True
-            
+                return {
+                    'success': True,
+                    'modified': False,
+                    'manual_action_required': False,
+                    'instruction': None
+                }
+
             # Add the entry
             entry = f"{ip}\t{domain}\n"
-            
+
             if self.system == "windows":
-                self._add_host_windows(entry)
+                result = self._add_host_windows(entry)
             else:
-                self._add_host_unix(entry)
-            
+                result = self._add_host_unix(entry, ip, domain)
+
             print(f"Added {domain} to hosts file")
-            return True
-            
+            return result
+
         except Exception as e:
             print(f"Error adding host {domain}: {str(e)}")
-            return False
+            return {
+                'success': False,
+                'modified': False,
+                'manual_action_required': False,
+                'instruction': None
+            }
     
     def remove_host(self, domain):
         """Remove a domain from the hosts file"""
@@ -117,38 +134,66 @@ class HostsManager:
             return False
     
     def _add_host_windows(self, entry):
-        """Add host entry on Windows"""
+        """Add host entry on Windows.
+
+        Returns a result dict indicating success and that the file was modified.
+        """
         try:
             # Use PowerShell to add entry with administrator privileges
             powershell_cmd = f'Add-Content -Path "{self.hosts_file}" -Value "{entry.strip()}"'
             subprocess.run([
-                "powershell", "-Command", 
+                "powershell", "-Command",
                 f"Start-Process powershell -ArgumentList '-Command \"{powershell_cmd}\"' -Verb RunAs -Wait"
             ], check=True)
         except subprocess.CalledProcessError:
             # Fallback: try to append directly (may fail without admin rights)
             with open(self.hosts_file, 'a') as f:
                 f.write(entry)
+        return {
+            'success': True,
+            'modified': True,
+            'manual_action_required': False,
+            'instruction': None
+        }
     
-    def _add_host_unix(self, entry):
-        """Add host entry on Unix-like systems (macOS, Linux)"""
+    def _add_host_unix(self, entry, ip, domain):
+        """Add host entry on Unix-like systems (macOS, Linux).
+
+        Returns a result dict indicating that manual action is required,
+        since we cannot run sudo commands from the web interface without
+        blocking on a password prompt.
+        """
         try:
             # Skip automatic hosts file modification to avoid blocking
             # This prevents the password prompt from blocking the web interface
+            instruction = f"echo '{ip}\\t{domain}' | sudo tee -a {self.hosts_file}"
             print(f"ℹ️  To add the domain to your hosts file, manually run:")
-            print(f"   echo '{entry.strip()}' | sudo tee -a {self.hosts_file}")
+            print(f"   {instruction}")
             print(f"ℹ️  Or edit {self.hosts_file} and add: {entry.strip()}")
-            
+
             # Don't run sudo commands automatically to avoid blocking
             # subprocess.run([
-            #     "sudo", "sh", "-c", 
+            #     "sudo", "sh", "-c",
             #     f"echo '{entry.strip()}' >> {self.hosts_file}"
             # ], check=True)
-            
+
+            return {
+                'success': True,
+                'modified': False,
+                'manual_action_required': True,
+                'instruction': instruction
+            }
+
         except Exception as e:
             print(f"Warning: Could not modify hosts file: {str(e)}")
             print(f"Please manually add this line to {self.hosts_file}:")
             print(f"   {entry.strip()}")
+            return {
+                'success': False,
+                'modified': False,
+                'manual_action_required': False,
+                'instruction': None
+            }
     
     def _write_hosts_windows(self, lines):
         """Write hosts file on Windows"""

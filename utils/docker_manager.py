@@ -2,6 +2,8 @@ import subprocess
 import json
 from pathlib import Path
 
+from .docker_compose_detect import compose_command
+
 
 class DockerManager:
     """Handles Docker container operations and docker-compose configuration"""
@@ -16,21 +18,22 @@ class DockerManager:
         
         try:
             result = subprocess.run(
-                ['docker-compose', 'ps', '--format', 'json'],
+                compose_command('ps', '--format', 'json'),
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=30
             )
-            
+
             if result.returncode == 0:
                 containers = []
                 for line in result.stdout.strip().split('\n'):
                     if line:
                         containers.append(json.loads(line))
-                
+
                 running_containers = [c for c in containers if c.get('State') == 'running']
                 total_containers = len(containers)
-                
+
                 if total_containers == 0:
                     return {'status': 'stopped', 'containers': []}
                 elif len(running_containers) == total_containers:
@@ -39,7 +42,9 @@ class DockerManager:
                     return {'status': 'partial', 'containers': containers}
             else:
                 return {'status': 'stopped', 'containers': []}
-                
+
+        except subprocess.TimeoutExpired:
+            return {'status': 'error', 'error': 'Status check timed out'}
         except Exception as e:
             return {'status': 'error', 'error': str(e)}
     
@@ -50,12 +55,13 @@ class DockerManager:
         
         try:
             result = subprocess.run(
-                ['docker-compose', 'up', '-d'],
+                compose_command('up', '-d'),
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=120
             )
-            
+
             if result.returncode == 0:
                 # Verify containers actually started
                 status = self.get_project_status(project_path)
@@ -85,7 +91,9 @@ class DockerManager:
                 # docker-compose command failed
                 error_output = result.stderr if result.stderr else result.stdout
                 return {'success': False, 'error': error_output}
-                
+
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Operation timed out. Check Docker status.'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
@@ -96,17 +104,20 @@ class DockerManager:
         
         try:
             result = subprocess.run(
-                ['docker-compose', 'down'],
+                compose_command('down'),
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=120
             )
-            
+
             if result.returncode == 0:
                 return {'success': True, 'message': 'Project stopped successfully'}
             else:
                 return {'success': False, 'error': result.stderr}
-                
+
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Operation timed out. Check Docker status.'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
@@ -118,28 +129,32 @@ class DockerManager:
         try:
             # Stop first
             stop_result = subprocess.run(
-                ['docker-compose', 'down'],
+                compose_command('down'),
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=120
             )
-            
+
             if stop_result.returncode != 0:
                 return {'success': False, 'error': f'Failed to stop containers: {stop_result.stderr}'}
-            
+
             # Then start
             start_result = subprocess.run(
-                ['docker-compose', 'up', '-d'],
+                compose_command('up', '-d'),
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=120
             )
-            
+
             if start_result.returncode == 0:
                 return {'success': True, 'message': 'Project restarted successfully'}
             else:
                 return {'success': False, 'error': f'Failed to start containers: {start_result.stderr}'}
-                
+
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Operation timed out. Check Docker status.'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
@@ -150,17 +165,20 @@ class DockerManager:
         
         try:
             result = subprocess.run(
-                ['docker-compose', 'restart', container_name],
+                compose_command('restart', container_name),
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=120
             )
-            
+
             if result.returncode == 0:
                 return {'success': True, 'message': f'Container {container_name} restarted successfully'}
             else:
                 return {'success': False, 'error': f'Failed to restart container: {result.stderr}'}
-                
+
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Operation timed out. Check Docker status.'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
@@ -171,16 +189,19 @@ class DockerManager:
         
         try:
             result = subprocess.run(
-                ['docker-compose', 'logs', f'--tail={tail_lines}'],
+                compose_command('logs', f'--tail={tail_lines}'),
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=30
             )
             return result.stdout
+        except subprocess.TimeoutExpired:
+            return "Error: log fetch timed out"
         except Exception as e:
             return f"Error getting logs: {str(e)}"
     
-    def create_docker_compose(self, project_path, project_name, wordpress_version, domain, enable_ssl, enable_redis):
+    def create_docker_compose(self, project_path, project_name, wordpress_version, domain, enable_ssl, enable_redis, ports=None):
         """Create docker-compose.yml for the project"""
         
         # Create custom PHP configuration for file uploads
@@ -345,16 +366,22 @@ networks:
             f.write(compose_content)
         
         # Create .env file
+        http_port = ports['HTTP_PORT'] if ports else 80
+        https_port = ports['HTTPS_PORT'] if ports else 443
+        mysql_port = ports['MYSQL_PORT'] if ports else 3306
+        phpmyadmin_port = ports['PHPMYADMIN_PORT'] if ports else 8080
+        redis_port = ports['REDIS_PORT'] if ports else 6379
+
         env_content = f"""PROJECT_NAME={project_name}
 DB_NAME=local_{project_name}
 DB_USER=wordpress
 DB_PASSWORD=wordpress_password
 DB_ROOT_PASSWORD=root_password
-HTTP_PORT=80
-HTTPS_PORT=443
-MYSQL_PORT=3306
-PHPMYADMIN_PORT=8080
-REDIS_PORT=6379
+HTTP_PORT={http_port}
+HTTPS_PORT={https_port}
+MYSQL_PORT={mysql_port}
+PHPMYADMIN_PORT={phpmyadmin_port}
+REDIS_PORT={redis_port}
 DOMAIN={domain.split('/')[0]}
 """
         
@@ -426,10 +453,11 @@ pm = dynamic
         """Get the container ID for a docker-compose service. Returns None if not found."""
         try:
             result = subprocess.run(
-                ['docker-compose', 'ps', '-q', service_name],
+                compose_command('ps', '-q', service_name),
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=30
             )
             if result.returncode != 0 or not result.stdout:
                 return None
@@ -443,30 +471,40 @@ pm = dynamic
             result = subprocess.run(
                 ['docker', 'cp', str(Path(host_path).resolve()), f'{container_id}:{container_path}'],
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=30
             )
             return {
                 'success': result.returncode == 0,
                 'error': result.stderr if result.returncode != 0 else None
             }
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Operation timed out. Check Docker status.'}
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
     def exec_command_in_container(self, project_path, container_name, command):
         """Execute a command in a specific container"""
         try:
-            cmd = ['docker-compose', 'exec', '-T', container_name] + command
+            cmd = compose_command('exec', '-T', container_name) + command
             result = subprocess.run(
                 cmd,
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=120
             )
             return {
                 'success': result.returncode == 0,
                 'output': result.stdout,
                 'error': result.stderr,
                 'returncode': result.returncode
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                'success': False,
+                'error': 'Operation timed out. Check Docker status.',
+                'returncode': -1
             }
         except Exception as e:
             return {
@@ -492,15 +530,17 @@ pm = dynamic
                 return {'success': False, 'error': 'WP CLI service not configured. Please add WP CLI to this project first.'}
             
             # Run the WP CLI command - use shlex.split to properly handle quoted arguments
-            full_command = f"docker-compose --profile cli run --rm wpcli {command}"
-            
+            cmd = compose_command('--profile', 'cli', 'run', '--rm', 'wpcli')
+            cmd.extend(shlex.split(command))
+
             result = subprocess.run(
-                shlex.split(full_command),
+                cmd,
                 cwd=project_path,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=120
             )
-            
+
             return {
                 'success': result.returncode == 0,
                 'output': result.stdout,
@@ -508,7 +548,9 @@ pm = dynamic
                 'command': command,
                 'returncode': result.returncode
             }
-                
+
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'error': 'Operation timed out. Check Docker status.', 'command': command}
         except Exception as e:
             return {'success': False, 'error': str(e), 'command': command}
     
@@ -522,5 +564,6 @@ pm = dynamic
             with open(docker_compose_path, 'r') as f:
                 compose_content = f.read()
             return "wpcli:" in compose_content
-        except:
+        except Exception as e:
+            print(f"Warning: could not read docker-compose.yml: {e}")
             return False
