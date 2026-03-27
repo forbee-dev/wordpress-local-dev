@@ -159,40 +159,74 @@ class HostsManager:
     def _add_host_unix(self, entry, ip, domain):
         """Add host entry on Unix-like systems (macOS, Linux).
 
-        Returns a result dict indicating that manual action is required,
-        since we cannot run sudo commands from the web interface without
-        blocking on a password prompt.
+        On macOS, uses osascript to show a native GUI password dialog.
+        On Linux, falls back to manual instructions.
         """
         try:
-            # Skip automatic hosts file modification to avoid blocking
-            # This prevents the password prompt from blocking the web interface
+            if self.system == "darwin":
+                # macOS: use osascript for a native GUI sudo prompt (non-blocking for the terminal)
+                # Write the hosts line to a temp file, then use osascript to append it with admin privileges
+                import tempfile
+                tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+                tmp.write(f"{ip}\t{domain}\n")
+                tmp.close()
+                shell_cmd = f'/bin/cat {tmp.name} >> {self.hosts_file} && /bin/rm -f {tmp.name}'
+                result = subprocess.run(
+                    ["osascript", "-e",
+                     f"do shell script \"{shell_cmd}\" with administrator privileges"],
+                    capture_output=True, text=True, timeout=60
+                )
+                # Clean up temp file if osascript failed
+                import os
+                if os.path.exists(tmp.name):
+                    os.unlink(tmp.name)
+                if result.returncode == 0:
+                    print(f"✅ Added {domain} to hosts file via macOS admin prompt")
+                    return {
+                        'success': True,
+                        'modified': True,
+                        'manual_action_required': False,
+                        'instruction': None
+                    }
+                else:
+                    # User cancelled the dialog or auth failed
+                    print(f"⚠️  Hosts file update was cancelled or failed: {result.stderr.strip()}")
+                    instruction = f"echo '{ip}\\t{domain}' | sudo tee -a {self.hosts_file}"
+                    return {
+                        'success': True,
+                        'modified': False,
+                        'manual_action_required': True,
+                        'instruction': instruction
+                    }
+            else:
+                # Linux: show manual instruction (no reliable GUI sudo)
+                instruction = f"echo '{ip}\\t{domain}' | sudo tee -a {self.hosts_file}"
+                print(f"ℹ️  To add the domain to your hosts file, run:")
+                print(f"   {instruction}")
+                return {
+                    'success': True,
+                    'modified': False,
+                    'manual_action_required': True,
+                    'instruction': instruction
+                }
+
+        except subprocess.TimeoutExpired:
+            print(f"⚠️  Hosts file dialog timed out")
             instruction = f"echo '{ip}\\t{domain}' | sudo tee -a {self.hosts_file}"
-            print(f"ℹ️  To add the domain to your hosts file, manually run:")
-            print(f"   {instruction}")
-            print(f"ℹ️  Or edit {self.hosts_file} and add: {entry.strip()}")
-
-            # Don't run sudo commands automatically to avoid blocking
-            # subprocess.run([
-            #     "sudo", "sh", "-c",
-            #     f"echo '{entry.strip()}' >> {self.hosts_file}"
-            # ], check=True)
-
             return {
                 'success': True,
                 'modified': False,
                 'manual_action_required': True,
                 'instruction': instruction
             }
-
         except Exception as e:
             print(f"Warning: Could not modify hosts file: {str(e)}")
-            print(f"Please manually add this line to {self.hosts_file}:")
-            print(f"   {entry.strip()}")
+            instruction = f"echo '{ip}\\t{domain}' | sudo tee -a {self.hosts_file}"
             return {
                 'success': False,
                 'modified': False,
-                'manual_action_required': False,
-                'instruction': None
+                'manual_action_required': True,
+                'instruction': instruction
             }
     
     def _write_hosts_windows(self, lines):
