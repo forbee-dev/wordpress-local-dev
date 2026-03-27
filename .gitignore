@@ -127,3 +127,8 @@ temp/
 
 # Claude
 claude.md
+
+# Node
+node_modules/
+package.json
+package-lock.json
