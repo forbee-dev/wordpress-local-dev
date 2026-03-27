@@ -258,6 +258,7 @@ class RepositoryManager:
         structure = {
             'type': 'unknown',
             'has_wp_content': False,
+            'is_wp_content': False,
             'has_composer': False,
             'has_package_json': False,
             'is_theme': False,
@@ -289,8 +290,18 @@ class RepositoryManager:
             structure['has_package_json'] = True
             print(f"      ✓ Found package.json")
         
-        # If no wp-content, check if it's a theme or plugin
+        # Check if the repo root IS the wp-content (has plugins/ and themes/ at root)
         if not structure['has_wp_content']:
+            plugins_dir = repo_dir / "plugins"
+            themes_dir = repo_dir / "themes"
+            if plugins_dir.exists() and plugins_dir.is_dir() and themes_dir.exists() and themes_dir.is_dir():
+                structure['is_wp_content'] = True
+                structure['wp_content_path'] = repo_dir
+                structure['type'] = 'wp-content-root'
+                print(f"      ✓ Repository root IS wp-content (has plugins/ and themes/)")
+
+        # If no wp-content, check if it's a theme or plugin
+        if not structure['has_wp_content'] and not structure['is_wp_content']:
             # Check for theme indicators
             style_css = repo_dir / "style.css"
             index_php = repo_dir / "index.php"
@@ -331,36 +342,53 @@ class RepositoryManager:
     def setup_wp_content_from_repo(self, repo_dir, wp_content_path, repo_structure):
         """Set up wp-content based on repository structure"""
         
-        if repo_structure['has_wp_content']:
-            # Repository has wp-content - create symlink or copy
-            repo_wp_content = repo_structure['wp_content_path']
-            print(f"      📦 Setting up wp-content from repository...")
-            
-            # Remove default wp-content and create symlink to repository wp-content
+        if repo_structure.get('is_wp_content'):
+            # Repository root IS the wp-content directory — symlink directly
+            print(f"      📦 Repository root is wp-content, linking directly...")
             if wp_content_path.exists():
                 print(f"      🗑️  Removing existing wp-content directory...")
                 if wp_content_path.is_symlink():
                     wp_content_path.unlink()
                 else:
                     shutil.rmtree(wp_content_path)
-            
             try:
-                # Try to create symlink (preferred for development)
-                # Use relative path for better portability
+                relative_path = Path("repository")
+                print(f"      🔗 Creating symlink: wp-content -> {relative_path}")
+                wp_content_path.symlink_to(relative_path, target_is_directory=True)
+                print(f"      ✅ Symlink created successfully")
+            except OSError as e:
+                print(f"      ⚠️  Symlink failed ({str(e)}), copying instead...")
+                try:
+                    shutil.copytree(str(repo_dir), str(wp_content_path))
+                    print(f"      ✅ Copied repository as wp-content")
+                except Exception as copy_error:
+                    raise Exception(f"Failed to link or copy wp-content: {copy_error}")
+
+        elif repo_structure['has_wp_content']:
+            # Repository has a wp-content subdirectory
+            repo_wp_content = repo_structure['wp_content_path']
+            print(f"      📦 Setting up wp-content from repository...")
+
+            if wp_content_path.exists():
+                print(f"      🗑️  Removing existing wp-content directory...")
+                if wp_content_path.is_symlink():
+                    wp_content_path.unlink()
+                else:
+                    shutil.rmtree(wp_content_path)
+
+            try:
                 relative_path = Path("repository") / "wp-content"
                 print(f"      🔗 Creating symlink: wp-content -> {relative_path}")
                 wp_content_path.symlink_to(relative_path, target_is_directory=True)
                 print(f"      ✅ Symlink created successfully")
             except OSError as e:
                 print(f"      ⚠️  Symlink failed ({str(e)}), copying instead...")
-                # Fallback to copying if symlinks not supported
                 try:
-                    print(f"      📁 Copying wp-content directory (this may take a while)...")
                     shutil.copytree(str(repo_wp_content), str(wp_content_path))
                     print(f"      ✅ Copied wp-content from repository")
                 except Exception as copy_error:
                     raise Exception(f"Failed to link or copy wp-content: symlink error: {str(e)}, copy error: {str(copy_error)}")
-                
+
         elif repo_structure['is_theme']:
             # Repository is a theme - put it in themes directory
             print(f"      🎨 Setting up theme from repository...")
