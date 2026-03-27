@@ -160,7 +160,18 @@ class WordPressManager:
             fix_script_path = project_path / "fix_debug.php"
             fix_script_content = '''<?php
 $config_path = '/var/www/html/wp-config.php';
+
+// Guard: do not run if wp-config.php does not exist or is too small
+// (Docker entrypoint may not have generated it yet)
+if (!file_exists($config_path)) {
+    echo "wp-config.php does not exist yet, skipping debug config\\n";
+    exit(0);
+}
 $content = file_get_contents($config_path);
+if ($content === false || strlen($content) < 100) {
+    echo "wp-config.php is empty or incomplete, skipping debug config\\n";
+    exit(0);
+}
 
 // Remove any existing WP_DEBUG, WP_DEBUG_LOG, or WP_DEBUG_DISPLAY lines
 $lines = explode("\\n", $content);
