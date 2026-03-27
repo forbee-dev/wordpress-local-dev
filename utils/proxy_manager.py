@@ -103,7 +103,7 @@ class ProxyManager:
         self.ensure_proxy_running()
 
         # Connect proxy to the project's Docker network
-        network_name = f"{project_name}_wordpress_network"
+        network_name = f"{project_name.lower()}_wordpress_network"
         try:
             subprocess.run(
                 ["docker", "network", "connect", network_name, self.PROXY_CONTAINER],
@@ -120,7 +120,7 @@ class ProxyManager:
     def on_project_stop(self, project_name):
         """Called after project containers stop."""
         # Disconnect from the project network (may fail if network already gone)
-        network_name = f"{project_name}_wordpress_network"
+        network_name = f"{project_name.lower()}_wordpress_network"
         try:
             subprocess.run(
                 ["docker", "network", "disconnect", network_name, self.PROXY_CONTAINER],
