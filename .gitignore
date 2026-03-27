@@ -83,6 +83,9 @@ uploads/
 # Exception: reverse proxy default SSL (needed for the shared proxy to start)
 !reverse-proxy/default-ssl/*.pem
 
+# Reverse proxy generated configs (auto-generated when projects start)
+reverse-proxy/conf.d/*.conf
+
 # OS Files
 .DS_Store
 .DS_Store?

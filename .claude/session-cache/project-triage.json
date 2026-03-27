@@ -8,8 +8,13 @@
     "tools": []
   },
   "node": {
-    "detected": false,
-    "tools": []
+    "package_manager": "npm",
+    "framework": "none",
+    "typescript": false,
+    "detected": true,
+    "tools": [
+      "playwright"
+    ]
   },
   "styling": {
     "systems": []
@@ -25,6 +30,6 @@
       "github-actions"
     ]
   },
-  "project_type": "unknown",
+  "project_type": "node",
   "has_claude_md": true
 }
