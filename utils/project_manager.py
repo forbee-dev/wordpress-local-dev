@@ -658,9 +658,12 @@ class ProjectManager:
                     
                     if db_import_result['success']:
                         print(f"   ✅ Database imported successfully")
+                        # Fix table prefix and ensure WordPress recognizes the imported database
+                        print(f"   🔄 Ensuring WordPress recognizes imported database...")
+                        self.wordpress_manager.ensure_wordpress_recognizes_database(project_path)
                     else:
                         print(f"   ⚠️  Warning: Database import failed: {db_import_result['error']}")
-                
+
                 return {'success': True}
             else:
                 return {'success': False, 'error': f'Failed to start containers: {start_result.stderr}'}
