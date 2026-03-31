@@ -1,0 +1,39 @@
+{
+  "sessionId": "2dd164e6-0266-4805-83a1-e4a6747965a5",
+  "timestamp": "2026-03-27T15:35:57Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev",
+  "git": {
+    "branch": "main",
+    "uncommittedChanges": [
+      " M .claude/audit/audit-2026-03.jsonl",
+      " M .claude/learnings/index.jsonl",
+      " M .claude/learnings/learnings.md",
+      " M .claude/session-cache/tool-call-count",
+      " D .claude/sessions/2026-03-04-110326.json",
+      " D .claude/sessions/2026-03-04-110646.json",
+      " D .claude/sessions/2026-03-04-111218.json",
+      " D .claude/sessions/2026-03-04-122009.json",
+      " D .claude/sessions/2026-03-04-122838.json",
+      " D .claude/sessions/2026-03-04-122946.json",
+      " D .claude/sessions/2026-03-25-083605.json",
+      " D .claude/sessions/2026-03-25-083936.json",
+      " D .claude/sessions/2026-03-27-105006.json",
+      " D .claude/sessions/2026-03-27-105007.json",
+      " D .claude/sessions/2026-03-27-115337.json",
+      " D .claude/sessions/2026-03-27-115846.json",
+      " M .claude/sessions/latest.json",
+      " M TASKS.md",
+      "?? .claude/sessions/2026-03-27-133626.json",
+      "?? .claude/sessions/2026-03-27-133723.json"
+    ],
+    "recentCommits": [
+      "e661f18 Automate hosts file entries on macOS via native admin prompt",
+      "fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)",
+      "de570ab Auto-detect and fix table prefix after database import during project creation",
+      "6dc243e Fix wp-config.php debug script wiping entire config on new projects",
+      "0ee18e3 Remove default SSL key from repo, fix Docker network name casing for proxy"
+    ]
+  }
+}
+
+}

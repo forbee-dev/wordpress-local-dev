@@ -132,3 +132,13 @@ claude.md
 node_modules/
 package.json
 package-lock.json
+
+# Specific projects — re-include each parent, ignore siblings
+!/wordpress-projects/
+/wordpress-projects/*
+!/wordpress-projects/Infinileads/
+/wordpress-projects/Infinileads/*
+!/wordpress-projects/Infinileads/slots-library/
+/wordpress-projects/Infinileads/slots-library/*
+!/wordpress-projects/Infinileads/slots-library/slots-library-admin/
+!/wordpress-projects/Infinileads/slots-library/slots-library-api/

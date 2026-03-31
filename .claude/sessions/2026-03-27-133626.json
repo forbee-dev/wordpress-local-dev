@@ -1,0 +1,23 @@
+{
+  "sessionId": "2dd164e6-0266-4805-83a1-e4a6747965a5",
+  "timestamp": "2026-03-27T13:36:26.161Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev",
+  "git": {
+    "branch": "main",
+    "uncommittedChanges": [
+      "M .claude/audit/audit-2026-03.jsonl",
+      " M .claude/learnings/index.jsonl",
+      " M .claude/learnings/learnings.md",
+      "?? node_modules/",
+      "?? package-lock.json",
+      "?? package.json"
+    ],
+    "recentCommits": [
+      "e4ee92f Update session metadata, gitignore generated proxy configs, and sync TASKS.md",
+      "3bbf666 Infrastructure hardening: multi-project support, Docker Compose v2, reverse proxy, and reliability fixes",
+      "0fa35ab Refactor DockerManager to streamline PHP-FPM process management; enhance user and group specification for improved performance and compatibility in containerized environments.",
+      "7e414f1 Update nginx SSL configuration in ConfigManager; modify DockerManager to specify user and group for PHP-FPM processes, enhancing performance and compatibility.",
+      "f677863 Add PHP-FPM pool configuration to DockerManager; enhance PHP configuration method to include settings for process management and performance optimization."
+    ]
+  }
+}

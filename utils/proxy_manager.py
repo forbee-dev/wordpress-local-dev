@@ -44,15 +44,23 @@ class ProxyManager:
             return False
 
         # Check if already running
+        already_running = False
         try:
             result = subprocess.run(
                 ["docker", "inspect", "-f", "{{.State.Running}}", self.PROXY_CONTAINER],
                 capture_output=True, text=True, timeout=10,
             )
             if result.returncode == 0 and result.stdout.strip() == "true":
-                return True
+                already_running = True
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
+
+        # Purge stale configs before (re)starting -- prevents nginx from
+        # refusing to start when a project's containers are not running.
+        self._purge_stale_configs()
+
+        if already_running:
+            return True
 
         # Start it
         print("Starting shared reverse proxy...")
@@ -142,6 +150,28 @@ class ProxyManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _purge_stale_configs(self):
+        """Remove proxy configs for projects whose containers are not running.
+
+        This prevents nginx from failing to start/reload when an upstream host
+        (e.g. ``tvmatchen_nginx``) is unresolvable because its containers were
+        stopped outside normal lifecycle hooks (crash, reboot, manual docker stop).
+        """
+        if not self.conf_dir.exists():
+            return
+
+        removed = []
+        for conf_file in self.conf_dir.glob("*.conf"):
+            project_name = conf_file.stem  # e.g. "tvmatchen" from "tvmatchen.conf"
+            project_dir = self.projects_dir / project_name
+            if not project_dir.is_dir() or not self._is_project_running(project_dir):
+                conf_file.unlink()
+                removed.append(project_name)
+
+        if removed:
+            print(f"Purged stale proxy configs: {', '.join(removed)}")
+            self._reload_nginx()
 
     def _is_project_running(self, project_path):
         """Return True if at least one container in the project is running."""
