@@ -132,3 +132,13 @@ claude.md
 node_modules/
 package.json
 package-lock.json
+
+# Specific projects — re-include each parent, ignore siblings
+!/wordpress-projects/
+/wordpress-projects/*
+!/wordpress-projects/example-site-10/
+/wordpress-projects/example-site-10/*
+!/wordpress-projects/example-site-10/example-site-11/
+/wordpress-projects/example-site-10/example-site-11/*
+!/wordpress-projects/example-site-10/example-site-11/example-site-11-admin/
+!/wordpress-projects/example-site-10/example-site-11/example-site-11-api/

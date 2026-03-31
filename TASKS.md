@@ -10,6 +10,29 @@
 <!-- Future ideas -->
 
 ## Done
+- [x] ~~Session work (2026-03-27 15:35 on main)~~ — e661f18 Automate hosts file entries on macOS via native admin prompt
+- [x] ~~Session work (2026-03-27 15:35 on main)~~ — e661f18 Automate hosts file entries on macOS via native admin prompt
+- [x] ~~Session work (2026-03-27 14:51 on main)~~ — fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)
+- [x] ~~Session work (2026-03-27 14:51 on main)~~ — fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)
+- [x] ~~Session work (2026-03-27 14:05 on main)~~ — fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)
+- [x] ~~Session work (2026-03-27 14:04 on main)~~ — fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)
+- [x] ~~Session work (2026-03-27 14:04 on main)~~ — fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)
+- [x] ~~Session work (2026-03-27 14:04 on main)~~ — fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)
+- [x] ~~Session work (2026-03-27 14:04 on main)~~ — fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)
+- [x] ~~Session work (2026-03-27 13:52 on main)~~ — de570ab Auto-detect and fix table prefix after database import during project creation
+- [x] ~~Session work (2026-03-27 13:52 on main)~~ — de570ab Auto-detect and fix table prefix after database import during project creation
+- [x] ~~Session work (2026-03-27 13:50 on main)~~ — 6dc243e Fix wp-config.php debug script wiping entire config on new projects
+- [x] ~~Session work (2026-03-27 13:50 on main)~~ — 6dc243e Fix wp-config.php debug script wiping entire config on new projects
+- [x] ~~Session work (2026-03-27 13:47 on main)~~ — 0ee18e3 Remove default SSL key from repo, fix Docker network name casing for proxy
+- [x] ~~Session work (2026-03-27 13:47 on main)~~ — 0ee18e3 Remove default SSL key from repo, fix Docker network name casing for proxy
+- [x] ~~Session work (2026-03-27 13:39 on main)~~ — 436165d Add node_modules and package files to gitignore
+- [x] ~~Session work (2026-03-27 13:39 on main)~~ — 436165d Add node_modules and package files to gitignore
+- [x] ~~Session work (2026-03-27 13:38 on main)~~ — 436165d Add node_modules and package files to gitignore
+- [x] ~~Session work (2026-03-27 13:38 on main)~~ — 436165d Add node_modules and package files to gitignore
+- [x] ~~Session work (2026-03-27 13:37 on main)~~ — 436165d Add node_modules and package files to gitignore
+- [x] ~~Session work (2026-03-27 13:37 on main)~~ — 436165d Add node_modules and package files to gitignore
+- [x] ~~Session work (2026-03-27 13:36 on main)~~ — e4ee92f Update session metadata, gitignore generated proxy configs, and sync TASKS.md
+- [x] ~~Session work (2026-03-27 13:36 on main)~~ — e4ee92f Update session metadata, gitignore generated proxy configs, and sync TASKS.md
 - [x] ~~Session work (2026-03-27 13:35 on main)~~ — 3bbf666 Infrastructure hardening: multi-project support, Docker Compose v2, reverse proxy, and reliability fixes
 - [x] ~~Session work (2026-03-27 13:35 on main)~~ — 3bbf666 Infrastructure hardening: multi-project support, Docker Compose v2, reverse proxy, and reliability fixes
 - [x] ~~Session work (2026-03-27 13:34 on main)~~ — 3bbf666 Infrastructure hardening: multi-project support, Docker Compose v2, reverse proxy, and reliability fixes
