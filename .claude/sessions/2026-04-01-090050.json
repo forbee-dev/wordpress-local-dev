@@ -1,0 +1,26 @@
+{
+  "sessionId": "bc4647a1-051d-4131-abae-c0db80d42cc1",
+  "timestamp": "2026-04-01T08:00:50Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev",
+  "git": {
+    "branch": "main",
+    "uncommittedChanges": [
+      " M .claude/learnings/index.jsonl",
+      " M .claude/learnings/learnings.md",
+      " D .claude/sessions/2026-03-27-121410.json",
+      " D .claude/sessions/2026-03-27-131148.json",
+      " M .claude/sessions/latest.json",
+      "?? .claude/audit/audit-2026-04.jsonl",
+      "?? .claude/sessions/2026-04-01-085727.json",
+      "?? .claude/sessions/2026-04-01-085819.json",
+      "?? wordpress-projects/"
+    ],
+    "recentCommits": [
+      "6168345 Add stale config purging in ProxyManager to prevent nginx startup issues",
+      "e661f18 Automate hosts file entries on macOS via native admin prompt",
+      "fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)",
+      "de570ab Auto-detect and fix table prefix after database import during project creation",
+      "6dc243e Fix wp-config.php debug script wiping entire config on new projects"
+    ]
+  }
+}

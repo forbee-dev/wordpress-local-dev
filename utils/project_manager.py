@@ -220,9 +220,24 @@ class ProjectManager:
         return result
     
     def restart_project(self, project_name):
-        """Restart a WordPress project"""
+        """Restart a WordPress project (with proxy reconnection)"""
         project_path = self.projects_dir / project_name
-        return self.docker_manager.restart_project(project_path)
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+
+        # Disconnect proxy before stopping (network will be destroyed by down)
+        self.proxy_manager.on_project_stop(project_name)
+
+        result = self.docker_manager.restart_project(project_path)
+
+        if result.get('success'):
+            time.sleep(3)
+            # Reconnect proxy to the newly-created network
+            config = self.config_manager.read_project_config(project_path)
+            if config:
+                self.proxy_manager.on_project_start(project_name, config)
+
+        return result
     
     def delete_project(self, project_name):
         """Delete a WordPress project"""

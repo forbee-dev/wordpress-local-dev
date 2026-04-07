@@ -1,0 +1,19 @@
+{
+  "sessionId": "bc4647a1-051d-4131-abae-c0db80d42cc1",
+  "timestamp": "2026-04-01T08:51:50Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev/wordpress-projects/tvmatchen/repository/wp-content/plugins/sportsindex-widgets/inc/core/gutenberg",
+  "git": {
+    "branch": "dev",
+    "uncommittedChanges": [
+      " M package-lock.json",
+      " M package.json"
+    ],
+    "recentCommits": [
+      "183b859f Add schema URL normalization to Yoast canonical class",
+      "34bb77d7 Merge branch 'CDN-1632-t-vmatchen-update-position-0-toplist-cta-to-new-button-design' into 'dev'",
+      "cb84d56d Enhance button styles for bet suggestion and CTA components",
+      "cce8a315 Update ac-integration-plugin to version 1.9.2 and advanced-custom-fields-pro to version 6.7.2 in composer.json and composer.lock. Adjusted content-hash and plugin API version in composer.lock for consistency.",
+      "8ef01622 Merge branch 'CDN-1634-tvmatchen-nu-update-t-c-disclaimer-text' into 'dev'"
+    ]
+  }
+}

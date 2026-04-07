@@ -37,21 +37,34 @@ class ProxyManager:
     def ensure_proxy_running(self):
         """Start the shared proxy if not already running.
 
+        Also verifies that host port bindings (80/443) are intact — Docker
+        Desktop restarts can leave the container "running" but without the
+        port mappings, making all sites unreachable.
+
         Returns True when the proxy is confirmed running, False on failure.
         """
         if not self.proxy_dir.exists():
             print("reverse-proxy/ directory not found")
             return False
 
-        # Check if already running
+        # Check if already running AND ports are bound
+        needs_recreate = False
         already_running = False
         try:
             result = subprocess.run(
-                ["docker", "inspect", "-f", "{{.State.Running}}", self.PROXY_CONTAINER],
+                ["docker", "inspect", "-f",
+                 "{{.State.Running}} {{(index (index .NetworkSettings.Ports \"80/tcp\") 0).HostPort}}",
+                 self.PROXY_CONTAINER],
                 capture_output=True, text=True, timeout=10,
             )
-            if result.returncode == 0 and result.stdout.strip() == "true":
-                already_running = True
+            if result.returncode == 0:
+                parts = result.stdout.strip().split()
+                if len(parts) >= 2 and parts[0] == "true" and parts[1]:
+                    already_running = True
+                elif parts[0] == "true":
+                    # Running but ports not bound — needs recreate
+                    print("Proxy is running but port bindings are lost — recreating...")
+                    needs_recreate = True
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
@@ -59,14 +72,20 @@ class ProxyManager:
         # refusing to start when a project's containers are not running.
         self._purge_stale_configs()
 
-        if already_running:
+        if already_running and not needs_recreate:
             return True
 
-        # Start it
-        print("Starting shared reverse proxy...")
+        # (Re)create it via docker compose up, which ensures correct port
+        # bindings even when the container existed but lost its mappings.
+        if needs_recreate:
+            print("Recreating shared reverse proxy with port bindings...")
+        else:
+            print("Starting shared reverse proxy...")
+
         try:
             start = subprocess.run(
-                compose_command("up", "-d"),
+                compose_command("up", "-d", "--force-recreate") if needs_recreate
+                else compose_command("up", "-d"),
                 cwd=self.proxy_dir,
                 capture_output=True, text=True, timeout=60,
             )
@@ -76,6 +95,9 @@ class ProxyManager:
 
         if start.returncode == 0:
             print("Shared reverse proxy started on ports 80/443")
+            # After (re)creating the proxy, reconnect to all running projects'
+            # networks so their configs can resolve the upstream hostnames.
+            self._reconnect_all_networks()
             return True
 
         print(f"Failed to start proxy: {start.stderr}")
@@ -113,13 +135,16 @@ class ProxyManager:
         # Connect proxy to the project's Docker network
         network_name = f"{project_name.lower()}_wordpress_network"
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["docker", "network", "connect", network_name, self.PROXY_CONTAINER],
                 capture_output=True, text=True, timeout=15,
             )
-            # Errors are expected when the proxy is already connected -- that is fine.
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
+            if result.returncode != 0:
+                stderr = result.stderr.strip()
+                if "already exists" not in stderr:
+                    print(f"Warning: could not connect proxy to {network_name}: {stderr}")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            print(f"Warning: network connect failed for {network_name}: {exc}")
 
         # Write config for this project and reload
         self._write_project_conf(project_name, config)
@@ -150,6 +175,31 @@ class ProxyManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _reconnect_all_networks(self):
+        """Connect the proxy to every running project's Docker network.
+
+        Called after proxy (re)creation to restore connectivity to projects
+        that were already running before the proxy was recreated.
+        """
+        for project_dir in self.projects_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            config_file = project_dir / "config.json"
+            if not config_file.exists():
+                continue
+            if not self._is_project_running(project_dir):
+                continue
+            try:
+                config = json.loads(config_file.read_text())
+                project_name = config.get("name", project_dir.name)
+                network_name = f"{project_name.lower()}_wordpress_network"
+                subprocess.run(
+                    ["docker", "network", "connect", network_name, self.PROXY_CONTAINER],
+                    capture_output=True, text=True, timeout=15,
+                )
+            except Exception:
+                pass
 
     def _purge_stale_configs(self):
         """Remove proxy configs for projects whose containers are not running.
@@ -216,6 +266,11 @@ class ProxyManager:
             "",
         ]
 
+        # Use Docker's embedded DNS resolver and a variable for proxy_pass so
+        # that nginx resolves the upstream at *request* time, not at config-load
+        # time.  This prevents "host not found in upstream" errors that block
+        # nginx from starting/reloading when the project container is not (yet)
+        # running.
         if enable_ssl:
             # HTTP -> HTTPS redirect
             lines += [
@@ -230,6 +285,8 @@ class ProxyManager:
                 "    http2 on;",
                 f"    server_name {domain};",
                 "",
+                "    resolver 127.0.0.11 valid=10s ipv6=off;",
+                "",
                 f"    ssl_certificate /etc/nginx/project-ssl/{project_name}/ssl/cert.pem;",
                 f"    ssl_certificate_key /etc/nginx/project-ssl/{project_name}/ssl/key.pem;",
                 "    ssl_protocols TLSv1.2 TLSv1.3;",
@@ -238,7 +295,8 @@ class ProxyManager:
                 "    client_max_body_size 100M;",
                 "",
                 "    location / {",
-                f"        proxy_pass http://{nginx_container}:80;",
+                f"        set $upstream http://{nginx_container}:80;",
+                "        proxy_pass $upstream;",
                 "        proxy_set_header Host $host;",
                 "        proxy_set_header X-Real-IP $remote_addr;",
                 "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
@@ -251,9 +309,11 @@ class ProxyManager:
                 "server {",
                 "    listen 80;",
                 f"    server_name {domain};",
+                "    resolver 127.0.0.11 valid=10s ipv6=off;",
                 "    client_max_body_size 100M;",
                 "    location / {",
-                f"        proxy_pass http://{nginx_container}:80;",
+                f"        set $upstream http://{nginx_container}:80;",
+                "        proxy_pass $upstream;",
                 "        proxy_set_header Host $host;",
                 "        proxy_set_header X-Real-IP $remote_addr;",
                 "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
@@ -268,6 +328,15 @@ class ProxyManager:
     def _reload_nginx(self):
         """Reload nginx config without downtime. Silently ignored if proxy is not running."""
         try:
+            # Test configuration first
+            test = subprocess.run(
+                ["docker", "exec", self.PROXY_CONTAINER, "nginx", "-t"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if test.returncode != 0:
+                print(f"nginx config test failed: {test.stderr}")
+                return
+
             result = subprocess.run(
                 ["docker", "exec", self.PROXY_CONTAINER, "nginx", "-s", "reload"],
                 capture_output=True, text=True, timeout=10,
