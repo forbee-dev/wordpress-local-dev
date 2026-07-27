@@ -586,6 +586,49 @@ def update_wordpress_version(project_name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/projects/<project_name>/sync-wordpress-core', methods=['POST'])
+def sync_wordpress_core(project_name):
+    """Sync WordPress core files from the image into the project docroot.
+
+    Needed because the docroot lives in a persistent volume that the WordPress
+    image only seeds when empty. Pass {"force": true} to overwrite a docroot
+    that is newer than the image (i.e. accept a downgrade).
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        force = bool(data.get('force', False))
+        result = project_manager.sync_wordpress_core(project_name, force=force)
+
+        if result['success']:
+            return jsonify({
+                'message': result['message'],
+                'synced': result.get('synced', False),
+                'version': result.get('version')
+            })
+        else:
+            return jsonify({'error': result['error']}), 400
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/projects/<project_name>/core-version', methods=['GET'])
+def get_core_version(project_name):
+    """Report the WordPress version in the image vs. the one actually served"""
+    try:
+        result = project_manager.get_core_version_status(project_name)
+
+        if result['success']:
+            return jsonify({
+                'image_version': result['image_version'],
+                'docroot_version': result['docroot_version'],
+                'in_sync': result['in_sync']
+            })
+        else:
+            return jsonify({'error': result['error']}), 400
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/projects/<project_name>/update-domain', methods=['POST'])
 def update_domain(project_name):
     """Update domain for an existing project"""
