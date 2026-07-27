@@ -1,0 +1,21 @@
+{
+  "sessionId": "8b38e134-1b6e-4c9e-aa15-281925c9db30",
+  "timestamp": "2026-04-16T13:16:19Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev/wordpress-projects/tvmatchen/repository/wp-content/themes/tvkampen",
+  "git": {
+    "branch": "CDN-1660-t-vmatchen-nu-improve-wp-table-layout-on-mobile",
+    "uncommittedChanges": [
+      " M assets/css/gutenberg/tvk-gutenberg.css",
+      " M assets/css/maps/styles.css.map",
+      " M assets/css/styles.css",
+      " M assets/src/scss/block/_table.scss"
+    ],
+    "recentCommits": [
+      "cf604883 Refactor table block styles to improve layout and responsiveness",
+      "09eb66e2 Merge branch 'CDN-1651-1653' into 'staging'",
+      "ed83e639 Enhance provider odds block styles for improved responsiveness",
+      "c0b93d22 Merge branch 'CDN-1651-1653' into 'staging'",
+      "95a82f5a Refactor provider odds block styles and update SCSS imports"
+    ]
+  }
+}

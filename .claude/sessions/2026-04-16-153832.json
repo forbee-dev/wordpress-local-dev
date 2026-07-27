@@ -1,0 +1,27 @@
+{
+  "sessionId": "bf00f19d-ab11-4f25-bd48-1aa7849ee10d",
+  "timestamp": "2026-04-16T14:38:32Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev/wordpress-projects/tvmatchen/repository/wp-content/themes/tvkampen",
+  "git": {
+    "branch": "staging",
+    "uncommittedChanges": [
+      " M assets/css/gutenberg/tvk-gutenberg.css",
+      " M assets/css/maps/styles.css.map",
+      " M assets/css/styles.css",
+      " M assets/src/scss/gutenberg.scss",
+      " M assets/src/scss/styles.scss",
+      " M inc/core/class-helper.php",
+      " M modules/block-manager.php",
+      "?? blocks/channels/",
+      "?? inc/template-parts/gutenberg-blocks/channels.php",
+      "?? inc/template-parts/gutenberg-blocks/channels/"
+    ],
+    "recentCommits": [
+      "e4d85779 Merge branch 'CDN-1660-t-vmatchen-nu-improve-wp-table-layout-on-mobile' into 'staging'",
+      "afcfc9f7 Enhance table block styles for improved layout and responsiveness",
+      "93043d32 Merge branch 'CDN-1660-t-vmatchen-nu-improve-wp-table-layout-on-mobile' into 'staging'",
+      "cf604883 Refactor table block styles to improve layout and responsiveness",
+      "09eb66e2 Merge branch 'CDN-1651-1653' into 'staging'"
+    ]
+  }
+}

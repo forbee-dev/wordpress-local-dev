@@ -389,6 +389,16 @@ class ProjectManager:
             project_path, self.config_manager, self.docker_manager, new_version
         )
     
+    def sync_wordpress_core(self, project_name, force=False):
+        """Sync core files from the image into the docroot for an existing project"""
+        project_path = self.projects_dir / project_name
+        return self.wordpress_manager.sync_core_files(project_path, force=force)
+
+    def get_core_version_status(self, project_name):
+        """Report the image vs. actually-served WordPress core version"""
+        project_path = self.projects_dir / project_name
+        return self.wordpress_manager.get_core_version_status(project_path)
+
     def update_domain(self, project_name, new_domain, enable_ssl=None):
         """Update domain for an existing project"""
         project_path = self.projects_dir / project_name

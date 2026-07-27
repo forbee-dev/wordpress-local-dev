@@ -414,6 +414,216 @@ echo "wp-config.php updated successfully\\n";
             print(f"   ❌ Error adding WP CLI: {str(e)}")
             return {'success': False, 'error': str(e)}
     
+    @staticmethod
+    def _version_key(version):
+        """Sort key for a WP version string ('7.0.2' -> (7, 0, 2)).
+
+        Non-numeric suffixes (RC1, beta2, ...) are ignored, so '6.9' and
+        '6.9-RC1' compare equal. Callers fall back to a string comparison to
+        tell those apart.
+        """
+        parts = []
+        for chunk in re.split(r'[.\-+]', version):
+            match = re.match(r'\d+', chunk)
+            parts.append(int(match.group()) if match else 0)
+        while len(parts) < 3:
+            parts.append(0)
+        return tuple(parts[:3])
+
+    def _read_core_version(self, project_path, version_file):
+        """Read $wp_version out of a version.php inside the wordpress container.
+
+        Returns the version string, or None if the file is missing/unreadable.
+        """
+        try:
+            result = subprocess.run(
+                compose_command('exec', '-T', 'wordpress',
+                    'grep', '-h', '-m1', 'wp_version =', version_file),
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode != 0:
+                return None
+            match = re.search(r"\$wp_version\s*=\s*'([^']+)'", result.stdout)
+            return match.group(1) if match else None
+        except Exception:
+            return None
+
+    def _run_in_wordpress_container(self, project_path, script, timeout=180):
+        """Run a shell script as root in the wordpress container."""
+        try:
+            result = subprocess.run(
+                compose_command('exec', '-T', '--user', 'root', 'wordpress', 'sh', '-c', script),
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            return {
+                'success': result.returncode == 0,
+                'output': result.stdout.strip(),
+                'error': result.stderr.strip()
+            }
+        except subprocess.TimeoutExpired:
+            return {'success': False, 'output': '', 'error': 'Timed out running command in wordpress container'}
+        except Exception as e:
+            return {'success': False, 'output': '', 'error': str(e)}
+
+    def sync_core_files(self, project_path, force=False):
+        """Sync WordPress core files from the image into the project docroot.
+
+        The docroot (/var/www/html) lives in the persistent ``wordpress_data``
+        volume. The official WordPress image seeds it from /usr/src/wordpress
+        only when it is empty, so changing the image tag on an existing project
+        updates the image but leaves the *served* core files untouched. This
+        method closes that gap and is what makes a version change actually take
+        effect.
+
+        Never touches wp-content (bind-mounted from the project) or
+        wp-config.php. Refuses to downgrade unless ``force=True``.
+
+        Note: files removed between WP releases are only cleaned out of
+        wp-admin/ and wp-includes/ (which are replaced wholesale). Stale
+        top-level files from an older release are overwritten but not deleted.
+        """
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+
+        status = self.docker_manager.get_project_status(project_path)
+        if status.get('status') != 'running':
+            return {'success': False, 'error': 'Project must be running to sync WordPress core files'}
+
+        image_version = self._read_core_version(project_path, '/usr/src/wordpress/wp-includes/version.php')
+        if not image_version:
+            return {'success': False, 'error': 'Could not read WordPress version from the image (/usr/src/wordpress missing?)'}
+
+        docroot_version = self._read_core_version(project_path, '/var/www/html/wp-includes/version.php')
+
+        print(f"   🔍 Core version — image: {image_version}, docroot: {docroot_version or 'empty'}")
+
+        if docroot_version == image_version:
+            return {
+                'success': True,
+                'synced': False,
+                'version': image_version,
+                'message': f'Core files already at {image_version}, nothing to sync'
+            }
+
+        if docroot_version and not force:
+            if self._version_key(docroot_version) > self._version_key(image_version):
+                return {
+                    'success': True,
+                    'synced': False,
+                    'version': docroot_version,
+                    'message': (
+                        f'Docroot is running {docroot_version}, which is newer than the '
+                        f'image ({image_version}) — most likely a WordPress auto-update. '
+                        f'Left untouched to avoid a downgrade; re-run with force to overwrite.'
+                    )
+                }
+
+        # Move the old dirs aside rather than deleting, so a failed extract is recoverable.
+        sync_script = '''
+set -e
+SRC=/usr/src/wordpress
+DEST=/var/www/html
+[ -f "$SRC/wp-includes/version.php" ] || { echo "MISSING_SOURCE"; exit 1; }
+cd "$DEST"
+rm -rf wp-admin.wpsync-old wp-includes.wpsync-old
+if [ -d wp-admin ]; then mv wp-admin wp-admin.wpsync-old; fi
+if [ -d wp-includes ]; then mv wp-includes wp-includes.wpsync-old; fi
+tar -cf - -C "$SRC" --exclude=./wp-content --exclude=wp-content . | tar -xf - -C "$DEST"
+# sh has no pipefail, so check the result explicitly rather than trusting set -e.
+[ -f wp-includes/version.php ] && [ -d wp-admin ] || { echo "EXTRACT_FAILED"; exit 1; }
+chown -R www-data:www-data wp-admin wp-includes
+for f in *.php *.txt *.html; do
+  if [ -e "$f" ]; then chown www-data:www-data "$f"; fi
+done
+grep -h -m1 "wp_version =" wp-includes/version.php
+'''
+        print(f"   📦 Syncing core files {docroot_version or 'empty'} → {image_version}...")
+        sync = self._run_in_wordpress_container(project_path, sync_script)
+
+        new_version = None
+        if sync['success']:
+            match = re.search(r"\$wp_version\s*=\s*'([^']+)'", sync['output'])
+            new_version = match.group(1) if match else None
+
+        if new_version != image_version:
+            # Extract failed or produced the wrong version — put the old core back.
+            restore_script = '''
+cd /var/www/html
+if [ -d wp-admin.wpsync-old ]; then rm -rf wp-admin && mv wp-admin.wpsync-old wp-admin; fi
+if [ -d wp-includes.wpsync-old ]; then rm -rf wp-includes && mv wp-includes.wpsync-old wp-includes; fi
+'''
+            self._run_in_wordpress_container(project_path, restore_script)
+            detail = sync['error'] or sync['output'] or 'unknown error'
+            print(f"   ❌ Core sync failed, rolled back: {detail}")
+            return {
+                'success': False,
+                'error': f'Core file sync failed (previous core files restored): {detail}'
+            }
+
+        # Verified — drop the rollback copies.
+        self._run_in_wordpress_container(
+            project_path,
+            'cd /var/www/html && rm -rf wp-admin.wpsync-old wp-includes.wpsync-old'
+        )
+
+        # New files on disk need a fresh php-fpm so opcache doesn't serve the old bytecode.
+        try:
+            subprocess.run(
+                compose_command('restart', 'wordpress'),
+                cwd=project_path, capture_output=True, text=True, timeout=120
+            )
+        except Exception as e:
+            print(f"   ⚠️  Could not restart wordpress container: {e}")
+
+        # Patch releases rarely bump the DB version, but majors do.
+        db_message = None
+        if self.docker_manager.has_wpcli_service(project_path):
+            db_result = self.docker_manager.run_wp_cli_command(project_path, 'core update-db')
+            if db_result.get('success'):
+                db_message = 'database schema checked'
+            else:
+                db_message = 'core update-db failed — run it manually and check /wp-admin'
+                print(f"   ⚠️  core update-db failed: {db_result.get('error')}")
+
+        print(f"   ✅ Core files synced to {new_version}")
+        return {
+            'success': True,
+            'synced': True,
+            'version': new_version,
+            'previous_version': docroot_version,
+            'message': f'Core files synced {docroot_version or "empty"} → {new_version}'
+                       + (f' ({db_message})' if db_message else '')
+        }
+
+    def get_core_version_status(self, project_path):
+        """Compare the core version in the image against the one actually served.
+
+        Useful for spotting projects whose docroot has drifted from their
+        configured image tag.
+        """
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+
+        status = self.docker_manager.get_project_status(project_path)
+        if status.get('status') != 'running':
+            return {'success': False, 'error': 'Project must be running to check core version'}
+
+        image_version = self._read_core_version(project_path, '/usr/src/wordpress/wp-includes/version.php')
+        docroot_version = self._read_core_version(project_path, '/var/www/html/wp-includes/version.php')
+
+        return {
+            'success': True,
+            'image_version': image_version,
+            'docroot_version': docroot_version,
+            'in_sync': bool(image_version) and image_version == docroot_version
+        }
+
     def update_wordpress_version(self, project_path, config_manager, docker_manager, new_version):
         """Update WordPress version for an existing project"""
         try:
@@ -459,12 +669,33 @@ echo "wp-config.php updated successfully\\n";
             # Start containers with new version
             print(f"   🚀 Starting containers with new WordPress version...")
             start_result = docker_manager.start_project(project_path)
-            
-            if start_result['success']:
-                print(f"   ✅ WordPress version updated successfully")
-                return {'success': True, 'message': f'WordPress version updated from {old_version} to {new_version}'}
-            else:
+
+            if not start_result['success']:
                 return {'success': False, 'error': f'Failed to start containers: {start_result["error"]}'}
+
+            # The new image alone changes nothing: the docroot lives in the
+            # persistent wordpress_data volume and the image only seeds it when
+            # empty. Without this the site keeps serving the old core files.
+            sync_result = self.sync_core_files(project_path)
+
+            if not sync_result['success']:
+                return {
+                    'success': False,
+                    'error': (
+                        f'Image updated to {new_version} and containers are running, but the core '
+                        f'files in the docroot could not be updated, so the site is still serving '
+                        f'the old version. {sync_result["error"]}'
+                    )
+                }
+
+            served_version = sync_result.get('version', 'unknown')
+            print(f"   ✅ WordPress version updated successfully (serving {served_version})")
+            return {
+                'success': True,
+                'message': f'WordPress image updated from {old_version} to {new_version}. '
+                           f'{sync_result["message"]}. Now serving {served_version}.',
+                'served_version': served_version
+            }
                 
         except Exception as e:
             print(f"   ❌ Error updating WordPress version: {str(e)}")

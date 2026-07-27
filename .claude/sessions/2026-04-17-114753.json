@@ -1,0 +1,33 @@
+{
+  "sessionId": "7dffa626-dade-49a5-bcc8-ffebb851ff40",
+  "timestamp": "2026-04-17T10:47:53Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev",
+  "git": {
+    "branch": "main",
+    "uncommittedChanges": [
+      " M .claude/learnings/learnings.md",
+      " M .claude/session-cache/skill-manifest.json",
+      " M .claude/sessions/latest.json",
+      " m wordpress-projects/Infinileads/slots-library/slots-library-admin",
+      "?? .claude/sessions/2026-04-13-112622.json",
+      "?? .claude/sessions/2026-04-13-112739.json",
+      "?? .claude/sessions/2026-04-16-141407.json",
+      "?? .claude/sessions/2026-04-16-141619.json",
+      "?? .claude/sessions/2026-04-16-142057.json",
+      "?? .claude/sessions/2026-04-16-152539.json",
+      "?? .claude/sessions/2026-04-16-152654.json",
+      "?? .claude/sessions/2026-04-16-152906.json",
+      "?? .claude/sessions/2026-04-16-153832.json",
+      "?? .claude/sessions/2026-04-16-162048.json",
+      "?? .claude/sessions/2026-04-17-085400.json",
+      "?? .claude/sessions/2026-04-17-093521.json"
+    ],
+    "recentCommits": [
+      "f20bf9e Enhance project restart functionality and proxy management",
+      "6168345 Add stale config purging in ProxyManager to prevent nginx startup issues",
+      "e661f18 Automate hosts file entries on macOS via native admin prompt",
+      "fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)",
+      "de570ab Auto-detect and fix table prefix after database import during project creation"
+    ]
+  }
+}

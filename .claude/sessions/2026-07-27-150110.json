@@ -1,0 +1,37 @@
+{
+  "sessionId": "61e91767-37e8-4a7e-a5a0-6d78243a168b",
+  "timestamp": "2026-07-27T14:01:10.591Z",
+  "workingDirectory": "/Users/tiago.santos/Desktop/DEV/Local Dev",
+  "git": {
+    "branch": "CDN-1921-tv-matchen-purge-nginx-cached-rest-api-responses-via-nginx-helper-hook-",
+    "uncommittedChanges": [
+      "M .claude/learnings/index.jsonl",
+      " M .claude/learnings/learnings.md",
+      " M .claude/session-cache/skill-manifest.json",
+      " M .claude/session-cache/tool-call-count",
+      " M .claude/session-cache/tool-call-session",
+      " D .claude/sessions/2026-03-27-133926.json",
+      " D .claude/sessions/2026-03-27-134754.json",
+      " D .claude/sessions/2026-03-27-135050.json",
+      " D .claude/sessions/2026-03-27-135249.json",
+      " D .claude/sessions/2026-03-27-140414.json",
+      " D .claude/sessions/2026-03-27-140426.json",
+      " D .claude/sessions/2026-03-27-140511.json",
+      " D .claude/sessions/2026-03-27-145127.json",
+      " D .claude/sessions/2026-03-27-153557.json",
+      " D .claude/sessions/2026-04-01-085727.json",
+      " D .claude/sessions/2026-04-01-085819.json",
+      " D .claude/sessions/2026-04-01-090050.json",
+      " D .claude/sessions/2026-04-01-091231.json",
+      " D .claude/sessions/2026-04-01-091410.json",
+      " D .claude/sessions/2026-04-01-091528.json"
+    ],
+    "recentCommits": [
+      "f20bf9e Enhance project restart functionality and proxy management",
+      "6168345 Add stale config purging in ProxyManager to prevent nginx startup issues",
+      "e661f18 Automate hosts file entries on macOS via native admin prompt",
+      "fbe4fe4 Detect repos where root IS wp-content (has plugins/ and themes/ at root)",
+      "de570ab Auto-detect and fix table prefix after database import during project creation"
+    ]
+  }
+}

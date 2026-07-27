@@ -1,21 +1,201 @@
 [
   {
-    "name": "continuous-learning",
-    "description": "Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents. Project-scoped instincts prevent cross-project contamination.",
+    "name": "audit-self",
+    "description": "Use to re-run the ForgeBee self-audit on demand — scores every skill, agent, and command against the scorecard. Writes timestamped findings and surfaces regressions since the last run.",
     "triggers": "",
-    "path": "/Users/tiago.santos/.claude/plugins/marketplaces/forbee-dev/forgebee/skills/continuous-learning/SKILL.md"
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/audit-self/SKILL.md"
+  },
+  {
+    "name": "brainstorming",
+    "description": "Use when invoking /workflow --strict or asking to \"brainstorm/design before building\" — turns an idea into a written, approved design spec before any implementation.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/brainstorming/SKILL.md"
+  },
+  {
+    "name": "checkpoint-preview",
+    "description": "Use after autonomous /workflow execution to walk the diff by concern (not by file) with risk-tagged hot spots — bridges agent autonomy to human judgment before debate or delivery.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/checkpoint-preview/SKILL.md"
+  },
+  {
+    "name": "code-advocate",
+    "description": "Use when /workflow reaches the code debate phase — argues FOR implementation quality, defends completeness and correctness against the Skeptic in blind debate.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/code-advocate/SKILL.md"
+  },
+  {
+    "name": "code-judge",
+    "description": "Use when /workflow code debate needs adjudication — rules on each item after reading blind Advocate and Skeptic cases. Approve, block, or flag.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/code-judge/SKILL.md"
+  },
+  {
+    "name": "code-skeptic",
+    "description": "Use when /workflow reaches the code debate phase — argues AGAINST the implementation, finds bugs, security holes, missing requirements, tech debt.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/code-skeptic/SKILL.md"
+  },
+  {
+    "name": "continuous-learning",
+    "description": "Use when reviewing learned patterns from recent sessions, processing pending observations, or evolving repeated behaviors into reusable skills, commands, or agents.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/continuous-learning/SKILL.md"
+  },
+  {
+    "name": "elicitation",
+    "description": "Use after producing a plan or design to stress-test it via a named method (Pre-mortem, Red Team, Inversion, Stakeholder Round Table, etc.) — applies to OUTPUT, not requirements.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/elicitation/SKILL.md"
+  },
+  {
+    "name": "forgebee-help",
+    "description": "Use when the user asks \"what commands are available\", \"how do I use ForgeBee\", \"what can ForgeBee do\", or needs a quick reference. Reads forgebee/INDEX.md as canonical source.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/forgebee-help/SKILL.md"
   },
   {
     "name": "forgebee-setup",
-    "description": ">",
+    "description": "Use when initializing ForgeBee on a new project — sets up CLAUDE.md, PM system, and project memory. For command-list questions, invoke the `forgebee-help` skill.",
     "triggers": "",
-    "path": "/Users/tiago.santos/.claude/plugins/marketplaces/forbee-dev/forgebee/skills/forgebee-setup/SKILL.md"
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/forgebee-setup/SKILL.md"
+  },
+  {
+    "name": "investigate",
+    "description": "Use when handed a crash log, stack trace, or \"this used to work\" report — produces a forensic case file with evidence grading before code changes. Complements debugger-detective.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/investigate/SKILL.md"
   },
   {
     "name": "project-router",
-    "description": "",
+    "description": "Use at session start or when switching projects — detects stack (WordPress, Next.js, PHP, Node), tooling, styling system, database, and routes to the right conventions and guardrails.",
     "triggers": "",
-    "path": "/Users/tiago.santos/.claude/plugins/marketplaces/forbee-dev/forgebee/skills/project-router/SKILL.md"
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/project-router/SKILL.md"
+  },
+  {
+    "name": "requirements-advocate",
+    "description": "Use when /workflow reaches the requirements debate phase — argues FOR planning artifacts, defends quality, feasibility, and completeness in blind debate.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/requirements-advocate/SKILL.md"
+  },
+  {
+    "name": "requirements-judge",
+    "description": "Use when /workflow requirements debate needs adjudication — rules on each item after reading blind Advocate and Skeptic cases. Approve, block, or flag.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/requirements-judge/SKILL.md"
+  },
+  {
+    "name": "requirements-skeptic",
+    "description": "Use when /workflow reaches the requirements debate phase — argues AGAINST planning artifacts, finds gaps, risks, missing edge cases, flawed assumptions.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/requirements-skeptic/SKILL.md"
+  },
+  {
+    "name": "review-accessibility",
+    "description": "Use when auditing UI changes for WCAG 2.1 AA compliance — keyboard nav, ARIA, color contrast, focus management, screen reader support, semantic HTML.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-accessibility/SKILL.md"
+  },
+  {
+    "name": "review-all",
+    "description": "Use when about to push, open a PR, or asking for a thorough pre-ship review — covers code quality, security, performance, accessibility, docs, and best practices in one pass.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-all/SKILL.md"
+  },
+  {
+    "name": "review-api",
+    "description": "Use when reviewing route handlers, REST/GraphQL endpoints, or API contracts — covers design, input validation, error shapes, auth, rate limiting, and REST consistency.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-api/SKILL.md"
+  },
+  {
+    "name": "review-best-practices",
+    "description": "Use when reviewing code for SOLID violations, design pattern misuse, leaky abstractions, separation of concerns, or architecture-level smells.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-best-practices/SKILL.md"
+  },
+  {
+    "name": "review-code",
+    "description": "Use when reviewing staged or recent code changes for logic errors, DRY violations, error handling gaps, type safety issues, or dead code — narrower than review-all.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-code/SKILL.md"
+  },
+  {
+    "name": "review-code-style",
+    "description": "Use when checking adherence to project conventions — import order, naming standards, TypeScript patterns, React idioms, file organization. Not formatting (use a linter).",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-code-style/SKILL.md"
+  },
+  {
+    "name": "review-database",
+    "description": "Use when reviewing SQL migrations, queries, RLS/policy changes, schema modifications, or ORM access patterns for safety, performance, or correctness.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-database/SKILL.md"
+  },
+  {
+    "name": "review-docs",
+    "description": "Use when reviewing code for missing docblocks, outdated comments, undocumented parameters, unexplained complex logic, or stale README sections.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-docs/SKILL.md"
+  },
+  {
+    "name": "review-performance",
+    "description": "Use when investigating slowness or reviewing code for N+1 queries, memory leaks, expensive loops, missing caching, bundle bloat, or render bottlenecks.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-performance/SKILL.md"
+  },
+  {
+    "name": "review-prompt",
+    "description": "Use when reviewing code that builds LLM features — prompt construction, tool/function definitions, model-output handling, RAG context, or agent loops. Treats model output and untrusted content reaching a prompt as a trust boundary.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-prompt/SKILL.md"
+  },
+  {
+    "name": "review-security",
+    "description": "Use when auditing code for OWASP Top 10 vulnerabilities, injection flaws, broken auth, secret exposure, or dependency CVEs — typically before shipping or after auth/data-handling changes.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-security/SKILL.md"
+  },
+  {
+    "name": "review-tests",
+    "description": "Use when reviewing test suites for coverage gaps, brittle mocks, missing edge cases, or untested code paths — runs after new code or before merging.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-tests/SKILL.md"
+  },
+  {
+    "name": "review-wordpress",
+    "description": "Use when reviewing WordPress plugin or theme code for WP coding standards (WPCS), security (nonces, sanitization, escaping), hook naming, text domains, or plugin architecture.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/review-wordpress/SKILL.md"
+  },
+  {
+    "name": "strategy-advocate",
+    "description": "Use when /growth reaches the strategy debate phase — argues FOR marketing strategy artifacts, defends quality, feasibility, and effectiveness in blind debate.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/strategy-advocate/SKILL.md"
+  },
+  {
+    "name": "strategy-judge",
+    "description": "Use when /growth strategy debate needs adjudication — rules on each item after reading blind Advocate and Skeptic cases. Approve, block, or flag.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/strategy-judge/SKILL.md"
+  },
+  {
+    "name": "strategy-skeptic",
+    "description": "Use when /growth reaches the strategy debate phase — argues AGAINST marketing strategy, finds weak positioning, audience gaps, flawed assumptions.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/strategy-skeptic/SKILL.md"
+  },
+  {
+    "name": "surface-ambiguity",
+    "description": "Use when about to make a non-trivial choice with multiple valid interpretations — forces listing of options and the chosen one with rationale. Catches silent picks.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/surface-ambiguity/SKILL.md"
+  },
+  {
+    "name": "terse-report",
+    "description": "Use when reporting to an orchestrator (/workflow, /team), not the user — emit telegraphic format keeping code/citations exact, dropping prose filler. Cuts ~65% of report tokens.",
+    "triggers": "",
+    "path": "/Users/tiago.santos/.claude/plugins/cache/forbee-dev/forgebee/5.3.1/skills/terse-report/SKILL.md"
   },
   {
     "name": "wordpress-router",

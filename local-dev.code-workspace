@@ -1,0 +1,27 @@
+{
+	"folders": [
+		{ "name": "🛠 Local Dev (tooling)", "path": "." },
+		{ "name": "AffiliationCloud", "path": "wordpress-projects/AffiliationCloud/repository" },
+		{ "name": "Infinileads", "path": "wordpress-projects/Infinileads/repository" },
+		{ "name": "Infinileads · slots-library-scraper", "path": "wordpress-projects/Infinileads/slots-library-scraper" },
+		{ "name": "Infinileads · slots-library-admin", "path": "wordpress-projects/Infinileads/slots-library/slots-library-admin" },
+		{ "name": "Infinileads · slots-library-api", "path": "wordpress-projects/Infinileads/slots-library/slots-library-api" },
+		{ "name": "bijoumysterybox", "path": "wordpress-projects/bijoumysterybox/repository" },
+		{ "name": "casimaru", "path": "wordpress-projects/casimaru/repository" },
+		{ "name": "casinobonukset", "path": "wordpress-projects/casinobonukset/repository" },
+		{ "name": "casinobonukset · FE", "path": "wordpress-projects/casinobonukset/repository/FE/casinobonukset.com-frontend" },
+		{ "name": "casinobonusar", "path": "wordpress-projects/casinobonusar/repository" },
+		{ "name": "casinopro", "path": "wordpress-projects/casinopro/repository" },
+		{ "name": "casinotop5", "path": "wordpress-projects/casinotop5/repository" },
+		{ "name": "oncasitown", "path": "wordpress-projects/oncasitown/repository" },
+		{ "name": "turtlebet", "path": "wordpress-projects/turtlebet/repository" },
+		{ "name": "turtlebet · frontend", "path": "wordpress-projects/turtlebet/frontend/turtlebet.com-frontend" },
+		{ "name": "tvmatchen (parent)", "path": "wordpress-projects/tvmatchen" },
+		{ "name": "tvmatchen", "path": "wordpress-projects/tvmatchen/repository" }
+	],
+	"settings": {
+		"git.autoRepositoryDetection": true,
+		"git.repositoryScanMaxDepth": 5,
+		"scm.repositories.visible": 0
+	}
+}
