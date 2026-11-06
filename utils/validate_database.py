@@ -260,7 +260,7 @@ def repair_gzipped_file(file_path, encoding_results):
         print("   🔍 Validating repaired file...")
         try:
             with gzip.open(repaired_path, 'rt', encoding='utf-8') as test_file:
-                test_content = test_file.read(1000)  # Test first 1KB
+                test_file.read(1000)  # Test first 1KB
             print("   ✅ Repaired file validates cleanly")
         except Exception as e:
             print(f"   ⚠️  Repaired file validation warning: {e}")
@@ -319,7 +319,7 @@ def repair_plain_file(file_path, encoding_results):
         print("   🔍 Validating repaired file...")
         try:
             with open(repaired_path, 'r', encoding='utf-8') as test_file:
-                test_content = test_file.read(1000)  # Test first 1KB
+                test_file.read(1000)  # Test first 1KB
             print("   ✅ Repaired file validates cleanly")
         except Exception as e:
             print(f"   ⚠️  Repaired file validation warning: {e}")

@@ -1,8 +1,10 @@
+import os
 import subprocess
 import json
 from pathlib import Path
 
 from .docker_compose_detect import compose_command
+from .validators import is_valid_domain, is_valid_project_name, is_valid_wordpress_version
 
 
 class DockerManager:
@@ -203,7 +205,16 @@ class DockerManager:
     
     def create_docker_compose(self, project_path, project_name, wordpress_version, domain, enable_ssl, enable_redis, ports=None):
         """Create docker-compose.yml for the project"""
-        
+        # These values are interpolated into YAML/.env text. Reject anything
+        # that could break out of its line before writing a single byte.
+        wordpress_version = wordpress_version or 'latest'
+        if not is_valid_project_name(project_name):
+            raise ValueError(f'Invalid project name for docker-compose: {project_name!r}')
+        if not is_valid_wordpress_version(wordpress_version):
+            raise ValueError(f'Invalid WordPress version for docker-compose: {wordpress_version!r}')
+        if not is_valid_domain(domain):
+            raise ValueError(f'Invalid domain for docker-compose: {domain!r}')
+
         # Create custom PHP configuration for file uploads
         self._create_php_config(project_path)
         
@@ -372,11 +383,37 @@ networks:
         phpmyadmin_port = ports['PHPMYADMIN_PORT'] if ports else 8080
         redis_port = ports['REDIS_PORT'] if ports else 6379
 
+        # Keep credentials from an existing .env: the MySQL volume was
+        # initialised with them, so rewriting the defaults would break the
+        # database connection on project updates.
+        db_name = f'local_{project_name}'
+        db_user = 'wordpress'
+        db_password = 'wordpress_password'
+        db_root_password = 'root_password'
+        env_path = project_path / ".env"
+        if env_path.exists():
+            try:
+                for line in env_path.read_text().splitlines():
+                    if '=' not in line or line.lstrip().startswith('#'):
+                        continue
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    if key == 'DB_NAME':
+                        db_name = value
+                    elif key == 'DB_USER':
+                        db_user = value
+                    elif key == 'DB_PASSWORD':
+                        db_password = value
+                    elif key == 'DB_ROOT_PASSWORD':
+                        db_root_password = value
+            except (OSError, UnicodeError):
+                pass
+
         env_content = f"""PROJECT_NAME={project_name}
-DB_NAME=local_{project_name}
-DB_USER=wordpress
-DB_PASSWORD=wordpress_password
-DB_ROOT_PASSWORD=root_password
+DB_NAME={db_name}
+DB_USER={db_user}
+DB_PASSWORD={db_password}
+DB_ROOT_PASSWORD={db_root_password}
 HTTP_PORT={http_port}
 HTTPS_PORT={https_port}
 MYSQL_PORT={mysql_port}
@@ -483,16 +520,30 @@ pm = dynamic
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
-    def exec_command_in_container(self, project_path, container_name, command):
-        """Execute a command in a specific container"""
+    def exec_command_in_container(self, project_path, container_name, command,
+                                  env=None, input_text=None):
+        """Execute a command in a specific container.
+
+        ``env`` is forwarded with ``-e NAME`` (values come from the host
+        environment), so secrets such as MYSQL_PWD never appear in argv.
+        """
         try:
-            cmd = compose_command('exec', '-T', container_name) + command
+            cmd = compose_command('exec', '-T')
+            run_env = None
+            if env:
+                run_env = os.environ.copy()
+                run_env.update(env)
+                for key in env:
+                    cmd += ['-e', key]
+            cmd += [container_name] + command
             result = subprocess.run(
                 cmd,
                 cwd=project_path,
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=120,
+                env=run_env,
+                input=input_text
             )
             return {
                 'success': result.returncode == 0,

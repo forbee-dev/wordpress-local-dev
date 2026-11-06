@@ -1,4 +1,5 @@
 import gzip
+import os
 import subprocess
 import re
 from pathlib import Path
@@ -26,6 +27,21 @@ class DatabaseLogger:
 
 
 class DatabaseManager:
+    @staticmethod
+    def _mysql_command(*args):
+        """Build a `compose exec` command that reads the password from the env.
+
+        `-e MYSQL_PWD` copies the host variable into the container, so the
+        password never appears in argv (visible via `ps`).
+        """
+        return compose_command('exec', '-T', '-e', 'MYSQL_PWD', 'mysql', *args)
+
+    @staticmethod
+    def _mysql_env(db_password):
+        env = os.environ.copy()
+        env['MYSQL_PWD'] = db_password
+        return env
+
     """Handles all database-related operations"""
     
     def __init__(self):
@@ -90,7 +106,7 @@ class DatabaseManager:
                             logger.log(f"   ✅ File read with {content.count('�')} replacement characters")
                         return content
                     
-        except Exception as e:
+        except Exception:
             # One more fallback: try reading as binary and decode with latin1 (which maps all bytes)
             try:
                 if logger:
@@ -214,11 +230,12 @@ class DatabaseManager:
             logger.log(f"🔄 Creating database backup...")
             # Export current database (capture bytes; decode with replace to handle invalid UTF-8)
             backup_result = subprocess.run(
-                compose_command('exec', '-T', 'mysql',
-                'mysqldump', f'-u{db_user}', f'-p{db_password}',
-                '--single-transaction', '--routines', '--triggers',
-                '--default-character-set=utf8mb4', db_name),
-                cwd=project_path, capture_output=True, timeout=600)
+                self._mysql_command(
+                    'mysqldump', f'-u{db_user}',
+                    '--single-transaction', '--routines', '--triggers',
+                    '--default-character-set=utf8mb4', db_name),
+                cwd=project_path, capture_output=True, timeout=600,
+                env=self._mysql_env(db_password))
 
             if backup_result.returncode == 0:
                 out = backup_result.stdout.decode('utf-8', errors='replace')
@@ -231,10 +248,11 @@ class DatabaseManager:
                 # Try alternative backup method for corrupted databases
                 logger.log(f"🔄 Attempting alternative backup method...")
                 backup_result = subprocess.run(
-                    compose_command('exec', '-T', 'mysql',
-                    'mysqldump', f'-u{db_user}', f'-p{db_password}',
-                    '--skip-extended-insert', '--skip-lock-tables', db_name),
-                    cwd=project_path, capture_output=True, timeout=600)
+                    self._mysql_command(
+                        'mysqldump', f'-u{db_user}',
+                        '--skip-extended-insert', '--skip-lock-tables', db_name),
+                    cwd=project_path, capture_output=True, timeout=600,
+                    env=self._mysql_env(db_password))
                 
                 if backup_result.returncode == 0:
                     out = backup_result.stdout.decode('utf-8', errors='replace')
@@ -255,10 +273,11 @@ class DatabaseManager:
         try:
             # Drop and recreate database
             clear_result = subprocess.run(
-                compose_command('exec', '-T', 'mysql',
-                'mysql', f'-u{db_user}', f'-p{db_password}',
-                '-e', f'DROP DATABASE IF EXISTS {db_name}; CREATE DATABASE {db_name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'),
-                cwd=project_path, capture_output=True, text=True, timeout=120)
+                self._mysql_command(
+                    'mysql', f'-u{db_user}',
+                    '-e', f'DROP DATABASE IF EXISTS {db_name}; CREATE DATABASE {db_name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'),
+                cwd=project_path, capture_output=True, text=True, timeout=120,
+                env=self._mysql_env(db_password))
 
             if clear_result.returncode == 0:
                 logger.log(f"✅ Database cleared and recreated successfully")
@@ -321,9 +340,10 @@ class DatabaseManager:
 
                 # Import database
                 import_result = subprocess.run(
-                    compose_command('exec', '-T', 'mysql',
-                    'mysql', f'-u{db_user}', f'-p{db_password}', db_name),
-                    input=db_content, cwd=project_path, capture_output=True, text=True, timeout=600)
+                    self._mysql_command(
+                        'mysql', f'-u{db_user}', db_name),
+                    input=db_content, cwd=project_path, capture_output=True,
+                    text=True, timeout=600, env=self._mysql_env(db_password))
                 
                 if import_result.returncode == 0:
                     logger.log(f"   ✅ Database imported successfully using {file_type} file: {file_to_try.name}")
@@ -431,9 +451,10 @@ class DatabaseManager:
             
             # Try importing the repaired file
             import_result = subprocess.run(
-                compose_command('exec', '-T', 'mysql',
-                'mysql', f'-u{db_user}', f'-p{db_password}', db_name),
-                input=import_content, cwd=project_path, capture_output=True, text=True, timeout=600)
+                self._mysql_command(
+                    'mysql', f'-u{db_user}', db_name),
+                input=import_content, cwd=project_path, capture_output=True,
+                text=True, timeout=600, env=self._mysql_env(db_password))
             
             if import_result.returncode == 0:
                 logger.log(f"   ✅ Database imported successfully using repaired file: {repaired_name}")

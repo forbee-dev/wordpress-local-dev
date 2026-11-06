@@ -60,9 +60,10 @@ class RepositoryManager:
             # Use Popen to stream output in real-time
             # Git sends progress to stderr, so we merge it into stdout
             process = subprocess.Popen([
-                'git', 'clone', 
+                'git', 'clone',
                 '--progress',                # Show progress
-                repo_url, 
+                '--',                        # End options: repo_url cannot be a flag
+                repo_url,
                 str(repo_dir)
             ], 
             env=env, 

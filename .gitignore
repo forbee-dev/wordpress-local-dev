@@ -65,6 +65,9 @@ ssl/
 .env.local
 .env.production
 
+# Flask session secret generated on first run
+.flask_secret
+
 # Backup files
 *.bak
 *.backup

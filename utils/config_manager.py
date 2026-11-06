@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from .validators import is_valid_domain, is_valid_project_name, is_valid_subfolder
+
 
 class ConfigManager:
     """Handles creation of configuration files (nginx, Makefile, etc.)"""
@@ -9,7 +11,11 @@ class ConfigManager:
     
     def create_nginx_config(self, project_path, project_name, domain, enable_ssl, subfolder=""):
         """Create nginx configuration"""
-        
+        host = domain.split('/')[0]
+        # Defense in depth: these values end up verbatim in nginx syntax.
+        if not is_valid_domain(host) or not is_valid_subfolder(subfolder):
+            raise ValueError(f'Invalid domain or subfolder for nginx config: {domain!r}')
+
         ssl_config = """
     listen 443 ssl;
     http2 on;
@@ -18,16 +24,11 @@ class ConfigManager:
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;""" if enable_ssl else ""
         
-        # Handle subfolder routing
-        location_config = "/"
-        if subfolder:
-            location_config = f"/{subfolder}/"
-        
         # Build nginx configuration based on subfolder setup
         if subfolder:
             nginx_content = f"""server {{
     listen 80;{ssl_config}
-    server_name {domain.split('/')[0]};
+    server_name {host};
     
     root /var/www/html;
     index index.php index.html index.htm;
@@ -100,7 +101,7 @@ class ConfigManager:
         else:
             nginx_content = f"""server {{
     listen 80;{ssl_config}
-    server_name {domain.split('/')[0]};
+    server_name {host};
     
     root /var/www/html;
     index index.php index.html index.htm;
@@ -151,15 +152,27 @@ class ConfigManager:
     
     def create_makefile(self, project_path, project_name, domain, db_file_path=None):
         """Create Makefile for the project"""
-        
+        # Defense in depth: these values are interpolated into make syntax.
+        if not is_valid_project_name(project_name):
+            raise ValueError(f'Invalid project name for Makefile: {project_name!r}')
+        if not is_valid_domain(domain):
+            raise ValueError(f'Invalid domain for Makefile: {domain!r}')
+
         db_import_command = ""
         if db_file_path:
-            # Use the project-relative path for the Makefile
-            relative_db_path = f"data/{Path(db_file_path).name}"
+            # Use the project-relative path for the Makefile. Keep it to the
+            # same safe alphabet as uploads: backticks/$ would be interpreted
+            # by make or the recipe shell.
+            db_filename = Path(db_file_path).name
+            if not db_filename or not all(
+                ch.isalnum() or ch in ' ._~-' for ch in db_filename
+            ):
+                raise ValueError(f'Unsafe database file name for Makefile: {db_filename!r}')
+            relative_db_path = f"data/{db_filename}"
             db_import_command = f"""
 db-import: ## Import database from file
 \t@echo "Importing database from {relative_db_path}..."
-\t@$(COMPOSE_CMD) exec -T mysql mysql -u${{DB_USER}} -p${{DB_PASSWORD}} ${{DB_NAME}} < "{relative_db_path}"
+\t@$(COMPOSE_CMD) exec -T -e MYSQL_PWD mysql mysql -u${{DB_USER}} ${{DB_NAME}} < "{relative_db_path}"
 \t@echo "Database imported successfully!"
 """
         
@@ -168,6 +181,10 @@ db-import: ## Import database from file
 # Domain: {domain}
 
 include .env
+
+# Pass the DB password to compose/docker through the environment instead of
+# placing it on the command line (where `ps` would expose it).
+export MYSQL_PWD := ${{DB_PASSWORD}}
 
 COMPOSE_CMD ?= docker compose
 
@@ -212,7 +229,7 @@ shell: ## Access WordPress container shell
 
 db-export: ## Export database to file
 \t@echo "Exporting database..."
-\t@$(COMPOSE_CMD) exec mysql mysqldump -u${{DB_USER}} -p${{DB_PASSWORD}} ${{DB_NAME}} > ./data/export_$(shell date +%Y%m%d_%H%M%S).sql
+\t@$(COMPOSE_CMD) exec -T -e MYSQL_PWD mysql mysqldump -u${{DB_USER}} ${{DB_NAME}} > ./data/export_$(shell date +%Y%m%d_%H%M%S).sql
 \t@echo "Database exported to ./data/"
 {db_import_command}
 clean: ## Clean up containers and volumes

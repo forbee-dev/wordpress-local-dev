@@ -1,7 +1,8 @@
-import os
 import platform
 import subprocess
 from pathlib import Path
+
+from .validators import is_valid_hostname
 
 class HostsManager:
     def __init__(self):
@@ -25,6 +26,15 @@ class HostsManager:
             manual_action_required (bool): True if the user must edit manually.
             instruction (str|None): Shell command to run, if manual action needed.
         """
+        if not is_valid_hostname(domain):
+            print(f"Refusing to add invalid host name: {domain!r}")
+            return {
+                'success': False,
+                'modified': False,
+                'manual_action_required': False,
+                'instruction': None
+            }
+
         try:
             # Create backup before modifying
             self._create_backup()
@@ -61,6 +71,9 @@ class HostsManager:
     
     def remove_host(self, domain):
         """Remove a domain from the hosts file"""
+        if not is_valid_hostname(domain):
+            print(f"Refusing to remove invalid host name: {domain!r}")
+            return False
         try:
             if not self._host_exists(domain):
                 print(f"Host entry for {domain} does not exist")
@@ -73,11 +86,12 @@ class HostsManager:
             with open(self.hosts_file, 'r') as f:
                 lines = f.readlines()
             
-            # Filter out the domain entry
-            filtered_lines = []
-            for line in lines:
-                if not (domain in line and not line.strip().startswith('#')):
-                    filtered_lines.append(line)
+            # Filter out only lines that actually map this hostname. A plain
+            # substring check would also delete unrelated names that happen to
+            # contain it (e.g. "app.test" vs "app.testing").
+            filtered_lines = [
+                line for line in lines if not self._line_maps_host(line, domain)
+            ]
             
             # Write back to hosts file
             if self.system == "windows":
@@ -92,18 +106,26 @@ class HostsManager:
             print(f"Error removing host {domain}: {str(e)}")
             return False
     
+    @staticmethod
+    def _line_maps_host(line, domain):
+        """True if *line* is an active hosts entry for exactly *domain*."""
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            return False
+        # Drop inline comments before looking at the address/hostname fields.
+        fields = stripped.split('#', 1)[0].split()
+        if len(fields) < 2:
+            return False
+        return any(field.lower() == domain.lower() for field in fields[1:])
+
     def _host_exists(self, domain):
         """Check if a domain already exists in the hosts file"""
         try:
             with open(self.hosts_file, 'r') as f:
                 content = f.read()
-            
-            for line in content.split('\n'):
-                if line.strip() and not line.strip().startswith('#'):
-                    if domain in line:
-                        return True
-            return False
-            
+
+            return any(self._line_maps_host(line, domain) for line in content.split('\n'))
+
         except Exception:
             return False
     

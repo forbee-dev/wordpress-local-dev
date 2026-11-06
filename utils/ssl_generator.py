@@ -1,4 +1,3 @@
-import os
 import subprocess
 import platform
 from pathlib import Path
@@ -69,9 +68,6 @@ class SSLGenerator:
         try:
             project_ssl_dir = self.projects_dir / project_name / "ssl"
             project_ssl_dir.mkdir(exist_ok=True)
-            
-            cert_file = project_ssl_dir / "cert.pem"
-            key_file = project_ssl_dir / "key.pem"
             
             # Try mkcert first (preferred method for trusted certificates)
             if self.mkcert_available:

@@ -1,7 +1,6 @@
 import subprocess
 import shutil
 import re
-from pathlib import Path
 from .docker_compose_detect import compose_command
 from .port_allocator import PortAllocator
 
@@ -293,18 +292,15 @@ echo "wp-config.php updated successfully\\n";
         db_user = env_vars.get('DB_USER', 'wordpress')
         db_password = env_vars.get('DB_PASSWORD', 'wordpress_password')
         try:
-            result = subprocess.run(
-                compose_command('exec', '-T', 'mysql',
-                    'mysql', f'-u{db_user}', f'-p{db_password}', db_name,
-                    '-e', 'SHOW TABLES;'),
-                cwd=project_path,
-                capture_output=True,
-                text=True,
-                timeout=30
+            result = self.docker_manager.exec_command_in_container(
+                project_path, 'mysql',
+                ['mysql', f'-u{db_user}', db_name, '-e', 'SHOW TABLES;'],
+                env={'MYSQL_PWD': db_password},
             )
-            if result.returncode != 0 or not result.stdout.strip():
+            output = result.get('output', '')
+            if not result.get('success') or not output.strip():
                 return (None, None)
-            lines = [ln.strip() for ln in result.stdout.strip().split('\n') if ln.strip()]
+            lines = [ln.strip() for ln in output.strip().split('\n') if ln.strip()]
             options_table = None
             table_prefix = 'wp_'
             for ln in lines:
@@ -846,10 +842,11 @@ if [ -d wp-includes.wpsync-old ]; then rm -rf wp-includes && mv wp-includes.wpsy
             print(f"   ⏳ Waiting for MySQL to be ready...")
             mysql_ready = False
             for attempt in range(30):  # Wait up to 30 seconds
-                # Use MYSQL_PWD environment variable to avoid password in command line
+                # MYSQL_PWD is passed through the container env, not argv
                 result = self.docker_manager.exec_command_in_container(
-                    project_path, 'mysql', 
-                    ['sh', '-c', f'MYSQL_PWD={db_root_password} mysqladmin ping -h localhost -u root']
+                    project_path, 'mysql',
+                    ['mysqladmin', 'ping', '-h', 'localhost', '-u', 'root'],
+                    env={'MYSQL_PWD': db_root_password},
                 )
                 if result.get('success', False) and 'mysqld is alive' in result.get('output', ''):
                     mysql_ready = True
@@ -860,36 +857,37 @@ if [ -d wp-includes.wpsync-old ]; then rm -rf wp-includes && mv wp-includes.wpsy
             if not mysql_ready:
                 print(f"   ⚠️  MySQL may not be fully ready, but continuing...")
             
-            # Step 2: Ensure database exists (using MYSQL_PWD to avoid password in command)
+            # Step 2: Ensure database exists (password passed via container env)
             print(f"   🔍 Checking if database '{db_name}' exists...")
-            check_db_cmd = f"MYSQL_PWD={db_root_password} mysql -uroot -e \"SHOW DATABASES LIKE '{db_name}';\" | grep -q '{db_name}' && echo 'EXISTS' || echo 'NOT_EXISTS'"
             result = self.docker_manager.exec_command_in_container(
-                project_path, 'mysql', ['sh', '-c', check_db_cmd]
+                project_path, 'mysql',
+                ['mysql', '-uroot', '-N', '-B', '-e', f"SHOW DATABASES LIKE '{db_name}';"],
+                env={'MYSQL_PWD': db_root_password},
             )
             
-            db_exists = 'EXISTS' in result.get('output', '')
+            db_exists = db_name in result.get('output', '')
             
             if not db_exists:
                 print(f"   📦 Creating database '{db_name}'...")
-                create_db_cmd = f"MYSQL_PWD={db_root_password} mysql -uroot -e \"CREATE DATABASE IF NOT EXISTS \\`{db_name}\\`;\""
                 result = self.docker_manager.exec_command_in_container(
-                    project_path, 'mysql', ['sh', '-c', create_db_cmd]
+                    project_path, 'mysql',
+                    ['mysql', '-uroot', '-e', f'CREATE DATABASE IF NOT EXISTS `{db_name}`;'],
+                    env={'MYSQL_PWD': db_root_password},
                 )
                 if result.get('success', False):
                     print(f"   ✅ Database created")
                 else:
                     print(f"   ⚠️  Warning: Could not create database: {result.get('error', 'Unknown error')}")
             
-            # Step 3: Ensure user has permissions (MySQL 8.0+ uses CREATE USER then GRANT)
+            # Step 3: Ensure user has permissions (MySQL 8.0+ uses CREATE USER then GRANT).
+            # SQL goes over stdin so the generated password is not in argv.
             print(f"   🔐 Ensuring database user has proper permissions...")
-            # First, try to create user if it doesn't exist, then grant privileges
-            grant_cmd = f"""MYSQL_PWD={db_root_password} mysql -uroot -e "
-                CREATE USER IF NOT EXISTS '{db_user}'@'%' IDENTIFIED BY '{db_password}';
-                GRANT ALL PRIVILEGES ON \\`{db_name}\\`.* TO '{db_user}'@'%';
-                FLUSH PRIVILEGES;
-            \""""
+            grant_sql = f"""CREATE USER IF NOT EXISTS '{db_user}'@'%' IDENTIFIED BY '{db_password}';
+GRANT ALL PRIVILEGES ON `{db_name}`.* TO '{db_user}'@'%';
+FLUSH PRIVILEGES;"""
             result = self.docker_manager.exec_command_in_container(
-                project_path, 'mysql', ['sh', '-c', grant_cmd]
+                project_path, 'mysql', ['mysql', '-uroot'],
+                env={'MYSQL_PWD': db_root_password}, input_text=grant_sql,
             )
             if result.get('success', False):
                 print(f"   ✅ Permissions granted")
@@ -1031,7 +1029,7 @@ if [ -d wp-includes.wpsync-old ]; then rm -rf wp-includes && mv wp-includes.wpsy
             
             # Use WP CLI to check if WordPress can connect to the database
             if self.docker_manager.has_wpcli_service(project_path):
-                result = self.run_wp_cli_command(project_path, "core is-installed")
+                self.run_wp_cli_command(project_path, "core is-installed")
                 # If WordPress is installed, the command will succeed
                 # If not installed, it will return an error, which is also fine - means database is empty
                 return {'success': True, 'message': 'Database connection verified'}
@@ -1073,7 +1071,6 @@ if [ -d wp-includes.wpsync-old ]; then rm -rf wp-includes && mv wp-includes.wpsy
         try:
             import time
             import json
-            from pathlib import Path
             
             # Check if containers are running
             status = self.docker_manager.get_project_status(project_path)
@@ -1141,8 +1138,9 @@ if [ -d wp-includes.wpsync-old ]; then rm -rf wp-includes && mv wp-includes.wpsy
                 mysql_ready = False
                 for attempt in range(30):
                     result = self.docker_manager.exec_command_in_container(
-                        project_path, 'mysql', 
-                        ['sh', '-c', f'MYSQL_PWD={db_root_password} mysqladmin ping -h localhost -u root']
+                        project_path, 'mysql',
+                        ['mysqladmin', 'ping', '-h', 'localhost', '-u', 'root'],
+                        env={'MYSQL_PWD': db_root_password},
                     )
                     if result.get('success', False) and 'mysqld is alive' in result.get('output', ''):
                         mysql_ready = True

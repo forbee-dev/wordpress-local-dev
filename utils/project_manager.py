@@ -1,13 +1,16 @@
-import os
-import json
 import shutil
 import subprocess
-import platform
-import re
 import time
 import datetime
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from .validators import (
+    is_valid_domain,
+    is_valid_project_name,
+    is_valid_subfolder,
+    is_valid_wordpress_version,
+)
 from .ssl_generator import SSLGenerator
 from .hosts_manager import HostsManager
 from .database_manager import DatabaseManager
@@ -41,9 +44,24 @@ class ProjectManager:
                       subfolder='', custom_domain='', enable_ssl=True, enable_redis=True):
         """Create a new WordPress project"""
         try:
-            # Validate project name
-            if not re.match(r'^[a-zA-Z0-9\-_]+$', project_name):
+            # Validate project name (fullmatch: `$` would allow a trailing newline)
+            if not is_valid_project_name(project_name):
                 return {'success': False, 'error': 'Project name can only contain letters, numbers, hyphens, and underscores'}
+            if not is_valid_wordpress_version(wordpress_version):
+                return {'success': False, 'error': 'Invalid WordPress version'}
+
+            # Accept either `custom_domain` or `custom_domain/subfolder`, but not
+            # both spellings at once. Normalize before building the domain.
+            if custom_domain:
+                if not is_valid_domain(custom_domain):
+                    return {'success': False, 'error': 'Invalid custom domain'}
+                if '/' in custom_domain:
+                    custom_domain, embedded_subfolder = custom_domain.split('/', 1)
+                    if subfolder and subfolder != embedded_subfolder:
+                        return {'success': False, 'error': 'Subfolder specified twice'}
+                    subfolder = embedded_subfolder
+            if not is_valid_subfolder(subfolder):
+                return {'success': False, 'error': 'Invalid subfolder (letters, numbers, ".", "_", "~", "-" and "/" only)'}
             
             project_path = self.projects_dir / project_name
             if project_path.exists():
@@ -157,22 +175,33 @@ class ProjectManager:
             print(f"❌ Error creating project {project_name}: {str(e)}")
             # Clean up if project creation failed
             self._cleanup_failed_project(project_path)
-            return {'success': False, 'error': str(e)}
+            return {'success': False, 'error': 'Failed to create project; check the server logs.'}
     
     def list_projects(self):
-        """List all WordPress projects"""
-        projects = []
-        for project_dir in self.projects_dir.iterdir():
-            if project_dir.is_dir():
-                config = self.config_manager.read_project_config(project_dir)
-                if config:
-                    try:
-                        status = self.docker_manager.get_project_status(project_dir)
-                        config['status'] = status
-                        projects.append(config)
-                    except Exception as e:
-                        print(f"Warning: could not load project {project_dir.name}: {e}")
-        return projects
+        """List all WordPress projects.
+
+        Docker status checks are independent, so they run in parallel: with a
+        dozen projects the dashboard used to wait for a dozen ``compose ps``
+        calls back-to-back.
+        """
+        project_dirs = [d for d in self.projects_dir.iterdir() if d.is_dir()]
+
+        def load(project_dir):
+            config = self.config_manager.read_project_config(project_dir)
+            if not config:
+                return None
+            try:
+                config['status'] = self.docker_manager.get_project_status(project_dir)
+            except Exception as e:
+                print(f"Warning: could not load project {project_dir.name}: {e}")
+                config['status'] = {'status': 'error', 'error': 'Unable to read container status'}
+            return config
+
+        if not project_dirs:
+            return []
+
+        with ThreadPoolExecutor(max_workers=min(8, len(project_dirs))) as pool:
+            return [config for config in pool.map(load, project_dirs) if config]
     
     def get_project_status(self, project_name):
         """Get the status of a WordPress project"""
@@ -210,7 +239,8 @@ class ProjectManager:
                 return result
                 
         except Exception as e:
-            return {'success': False, 'error': str(e)}
+            print(f"   ❌ Error starting project: {str(e)}")
+            return {'success': False, 'error': 'Failed to start project; check the server logs.'}
     
     def stop_project(self, project_name):
         """Stop a WordPress project"""
@@ -265,7 +295,8 @@ class ProjectManager:
             return {'success': True, 'message': 'Project deleted successfully'}
             
         except Exception as e:
-            return {'success': False, 'error': str(e)}
+            print(f"   ❌ Error deleting project: {str(e)}")
+            return {'success': False, 'error': 'Failed to delete project; check the server logs.'}
     
     def get_project_logs(self, project_name):
         """Get logs for a WordPress project"""
@@ -384,6 +415,8 @@ class ProjectManager:
     
     def update_wordpress_version(self, project_name, new_version):
         """Update WordPress version for an existing project"""
+        if not is_valid_wordpress_version(new_version):
+            return {'success': False, 'error': 'Invalid WordPress version'}
         project_path = self.projects_dir / project_name
         return self.wordpress_manager.update_wordpress_version(
             project_path, self.config_manager, self.docker_manager, new_version
@@ -404,30 +437,46 @@ class ProjectManager:
         project_path = self.projects_dir / project_name
         if not project_path.exists():
             return {'success': False, 'error': 'Project not found'}
-        
+
+        new_domain = str(new_domain or '').strip()
+        if not is_valid_domain(new_domain):
+            return {'success': False, 'error': 'Invalid domain'}
+
         try:
             # Read current config
             config = self.config_manager.read_project_config(project_path)
             if not config:
                 return {'success': False, 'error': 'Project config not found'}
-            
+
+            # A domain may carry the subfolder (`host/path`); otherwise keep the
+            # project's existing subfolder. Persist whichever applies.
+            domain_parts = new_domain.split('/', 1)
+            if len(domain_parts) == 2:
+                new_host, new_subfolder = domain_parts
+            else:
+                new_host = domain_parts[0]
+                new_subfolder = config.get('subfolder', '') or ''
+            if not is_valid_subfolder(new_subfolder):
+                return {'success': False, 'error': 'Invalid subfolder'}
+            new_domain = f"{new_host}/{new_subfolder}" if new_subfolder else new_host
+
             old_domain = config.get('domain', 'unknown')
             print(f"🔄 Updating domain from {old_domain} to {new_domain}")
             
             # Update config
-            updates = {'domain': new_domain}
+            updates = {'domain': new_domain, 'subfolder': new_subfolder}
             if enable_ssl is not None:
                 updates['enable_ssl'] = enable_ssl
             
             # Update hosts file
             print(f"   🔄 Updating hosts file...")
             self.hosts_manager.remove_host(old_domain.split('/')[0])
-            hosts_result = self.hosts_manager.add_host(new_domain.split('/')[0])
+            hosts_result = self.hosts_manager.add_host(new_host)
 
             # Generate new SSL certificate if SSL is enabled
             if config.get('enable_ssl', True):
-                print(f"   🔐 Generating new SSL certificate for {new_domain.split('/')[0]}...")
-                self.ssl_generator.generate_ssl_cert(project_name, new_domain.split('/')[0])
+                print(f"   🔐 Generating new SSL certificate for {new_host}...")
+                self.ssl_generator.generate_ssl_cert(project_name, new_host)
             
             # Stop containers
             print(f"   🛑 Stopping containers...")
@@ -445,14 +494,14 @@ class ProjectManager:
                 existing_ports = allocator.get_ports_for_index(config['port_index'])
 
             self.docker_manager.create_docker_compose(
-                project_path, config['name'], config.get('wordpress_version', 'latest'),
+                project_path, config['name'], config.get('wordpress_version') or 'latest',
                 new_domain, config.get('enable_ssl', True), config.get('enable_redis', True),
                 ports=existing_ports
             )
             
             self.config_manager.create_nginx_config(
                 project_path, config['name'], new_domain,
-                config.get('enable_ssl', True), config.get('subfolder', '')
+                config.get('enable_ssl', True), new_subfolder
             )
             
             # Start containers
@@ -470,7 +519,119 @@ class ProjectManager:
 
         except Exception as e:
             print(f"   ❌ Error updating domain: {str(e)}")
-            return {'success': False, 'error': str(e)}
+            return {'success': False, 'error': 'Failed to update domain; check the server logs.'}
+
+    def update_project_config(self, project_name, **updates):
+        """Apply dashboard configuration changes (domain, subfolder, SSL, Redis)."""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
+
+        stopped = False
+        try:
+            config = self.config_manager.read_project_config(project_path)
+            if not config:
+                return {'success': False, 'error': 'Project config not found'}
+
+            current_host = config.get('domain', '').split('/', 1)[0]
+            requested_domain = str(updates.get('custom_domain') or '').strip()
+            subfolder = updates.get('subfolder', config.get('subfolder', '')) or ''
+
+            if requested_domain:
+                if not is_valid_domain(requested_domain):
+                    return {'success': False, 'error': 'Invalid domain or subfolder'}
+                domain_parts = requested_domain.split('/', 1)
+                new_host = domain_parts[0]
+                if len(domain_parts) == 2:
+                    embedded_subfolder = domain_parts[1]
+                    if subfolder and subfolder != embedded_subfolder:
+                        return {'success': False, 'error': 'Subfolder specified twice'}
+                    subfolder = embedded_subfolder
+            else:
+                new_host = current_host
+
+            if not is_valid_subfolder(subfolder):
+                return {'success': False, 'error': 'Invalid domain or subfolder'}
+
+            enable_ssl = bool(updates.get('enable_ssl', config.get('enable_ssl', True)))
+            enable_redis = bool(updates.get('enable_redis', config.get('enable_redis', True)))
+            new_domain = f"{new_host}/{subfolder}" if subfolder else new_host
+
+            updated_fields = [
+                field for field, value in (
+                    ('domain', new_domain),
+                    ('subfolder', subfolder),
+                    ('enable_ssl', enable_ssl),
+                    ('enable_redis', enable_redis),
+                )
+                if config.get(field) != value
+            ]
+
+            if not updated_fields:
+                return {
+                    'success': True,
+                    'message': 'No configuration changes',
+                    'updated_fields': [],
+                }
+
+            if new_host != current_host:
+                print(f"   🔄 Changing domain {current_host} → {new_host}")
+                self.hosts_manager.remove_host(current_host)
+                self.hosts_manager.add_host(new_host)
+                if enable_ssl:
+                    self.ssl_generator.generate_ssl_cert(project_name, new_host)
+            elif enable_ssl and not config.get('enable_ssl', True):
+                self.ssl_generator.generate_ssl_cert(project_name, new_host)
+
+            self.config_manager.update_project_config(project_path, {
+                'domain': new_domain,
+                'subfolder': subfolder,
+                'enable_ssl': enable_ssl,
+                'enable_redis': enable_redis,
+            })
+            config.update({
+                'domain': new_domain,
+                'subfolder': subfolder,
+                'enable_ssl': enable_ssl,
+                'enable_redis': enable_redis,
+            })
+
+            self.docker_manager.stop_project(project_path)
+            stopped = True
+
+            ports = None
+            if config.get('port_index'):
+                ports = PortAllocator(self.projects_dir).get_ports_for_index(config['port_index'])
+
+            self.docker_manager.create_docker_compose(
+                project_path, config.get('name', project_name),
+                config.get('wordpress_version') or 'latest',
+                new_domain, enable_ssl, enable_redis, ports=ports)
+            self.config_manager.create_nginx_config(
+                project_path, config.get('name', project_name),
+                new_domain, enable_ssl, subfolder)
+
+            start_result = self.docker_manager.start_project(project_path)
+            stopped = not start_result.get('success')
+            if not start_result.get('success'):
+                return {
+                    'success': False,
+                    'error': f'Configuration saved but containers failed to start: {start_result.get("error")}',
+                }
+
+            return {
+                'success': True,
+                'message': 'Project configuration updated',
+                'updated_fields': updated_fields,
+            }
+
+        except Exception as e:
+            print(f"   ❌ Error updating project config: {str(e)}")
+            if stopped:
+                # Don't leave a previously running project down after a failed
+                # rebuild; starting again is safe (and idempotent).
+                self.docker_manager.start_project(project_path)
+            return {'success': False, 'error': 'Failed to update project configuration; check the server logs.'}
 
     def update_repository(self, project_name, new_repo_url):
         """Update repository URL and re-clone content for an existing project"""
@@ -522,7 +683,7 @@ class ProjectManager:
                 
         except Exception as e:
             print(f"   ❌ Error updating repository: {str(e)}")
-            return {'success': False, 'error': str(e)}
+            return {'success': False, 'error': 'Failed to update repository; check the server logs.'}
     
     def link_existing_repository(self, project_name):
         """Link an existing manually cloned repository to wp-content"""
@@ -580,7 +741,7 @@ class ProjectManager:
                 
         except Exception as e:
             print(f"   ❌ Error linking repository: {str(e)}")
-            return {'success': False, 'error': str(e)}
+            return {'success': False, 'error': 'Failed to link repository; check the server logs.'}
     
     def update_project_with_database(self, project_name, db_file_path, backup_before_import=True):
         """Add an initial database to a project that was created without one"""
@@ -647,7 +808,11 @@ class ProjectManager:
                 
         except Exception as e:
             print(f"   ❌ Error updating project with database: {str(e)}")
-            return {'success': False, 'error': str(e), 'logs': []}
+            return {
+                'success': False,
+                'error': 'Failed to update project with database; check the server logs.',
+                'logs': [],
+            }
     
     
     def _start_containers_with_setup(self, project_path, project_name, db_file_path):
@@ -696,7 +861,8 @@ class ProjectManager:
         except subprocess.TimeoutExpired:
             return {'success': False, 'error': 'Container startup timed out'}
         except Exception as e:
-            return {'success': False, 'error': str(e)}
+            print(f"   ❌ Error starting containers: {str(e)}")
+            return {'success': False, 'error': 'Container startup failed; check the server logs.'}
     
     def _cleanup_failed_project(self, project_path):
         """Clean up if project creation failed"""
@@ -768,6 +934,9 @@ class ProjectManager:
     
     def fix_php_upload_limits(self, project_name):
         """PHP upload limits are now handled automatically in all projects"""
+        project_path = self.projects_dir / project_name
+        if not project_path.exists():
+            return {'success': False, 'error': 'Project not found'}
         return {'success': True, 'message': 'PHP upload limits are automatically configured (100MB)'}
 
     def migrate_project_ports(self, project_name):
@@ -797,7 +966,7 @@ class ProjectManager:
         # Rewrite .env with new ports
         self.docker_manager.create_docker_compose(
             project_path, config['name'],
-            config.get('wordpress_version', 'latest'),
+            config.get('wordpress_version') or 'latest',
             config.get('domain', f'local.{project_name}.test'),
             config.get('enable_ssl', True),
             config.get('enable_redis', True),

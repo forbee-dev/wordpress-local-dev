@@ -110,6 +110,17 @@ The system now provides **automatic trusted SSL certificates** with no browser w
 4. **Open http://localhost:5001 in your browser**
 5. **Create your first WordPress project!**
 
+### Security defaults
+
+The dashboard binds to `127.0.0.1` only, so other devices on the same network
+cannot reach it. Two optional environment variables are available:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `FLASK_DEBUG` | unset | Set to `1` to enable the Werkzeug debugger (loopback only). |
+| `MAX_UPLOAD_MB` | `2048` | Maximum request body size for database uploads. |
+| `FLASK_SECRET_KEY` | generated | Session key; otherwise persisted in `.flask_secret`. |
+
 ## 🎯 Usage Guide
 
 ### Creating a New Project
@@ -545,12 +556,19 @@ If project updates fail:
 
 3. **Install development dependencies:**
    ```bash
-   pip install pytest pytest-cov black flake8
+   pip install -r requirements-dev.txt
    ```
 
-4. **Run in development mode:**
+4. **Run the tests:**
+   ```bash
+   pytest
+   ```
+
+5. **Run in development mode (debugger off by default):**
    ```bash
    python app.py
+   # or, for the Werkzeug debugger on loopback:
+   FLASK_DEBUG=1 python app.py
    ```
 
 ### **Architecture Guidelines**
